@@ -78,13 +78,14 @@ class MQTTThread(threading.Thread):
                 setDataToWrite(payloadV)
 
     def run(self, *args):
-        global getSerialData, getActivePlayer
+        global getSerialData, setSerialData
 
         print( self._args )
         while 1:
             mdbResponse=getSerialData()
             if(len(mdbResponse)>2):   
                 self.client.publish('smartvend/mdbResponse',mdbResponse)
+                setSerialData("")
             time.sleep(self._args[1])
         self._target(*self._args)
 

@@ -176,7 +176,9 @@ You can use the dashboard with the link below:
 
 
   ```diff
-  - The dashboard is running on a production server that is meant for testing only. You should install and configure the dashboard on your Raspberry Pi or local server to keep it running.
+  - The dashboard is running on a production server that is meant for testing only. 
+  
+  -You should install and configure the dashboard on your Raspberry Pi or local server to keep it running.
   ```
 
 ### Installing and Configuring Node-RED on Raspberry Pi
