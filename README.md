@@ -244,7 +244,7 @@ In the browser you can type http://raspberrypi.local:1880 to open the node-red
 ## ⛏️ Built Using <a name = "built_using"></a>
 
 - [Python3](https://www.python.org/) - Raspberry Pi FW
-- [Flutter](https://flutter.dev/) - Cross-Platform Smartphone App Development Framework
+- [Node-RED](https://nodered.org/) - Platform for creating dashbaords and backend logic
 
 ## ✍️ Authors <a name = "authors"></a>
 
