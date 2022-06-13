@@ -27,7 +27,7 @@
 - [Installation and Config](#Installation_and_Config)
 - [Test](#test)
 - [Circuit](#circuit)
-- [Smartphone App](#app)
+- [Dashboard](#dashboard)
 - [Built Using](#built_using)
 - [Authors](#authors)
 
@@ -69,18 +69,21 @@ A step by step series that covers how to get the Firmware running.
 * ![R2](artwork/r2_2.jpg)
 
 ### Configuring Raspberry Pi and Running the UI
-  1.  Copy Firmware folder to the desktop of your Raspberry Pi, open the terminal of your Raspberry Pi and execute the following commands
+  1.  Copy FirmwareRPi folder to the desktop of your Raspberry Pi, open the terminal of your Raspberry Pi and execute the following commands
 
-  - ```sudo apt-get update```
-  - ```sudo apt-get upgrade```
-  - ```sudo apt install python3-pip```
-  - ```sudo pip3 install gas-detection```
-  - ```cd ~/Desktop/Firmware```
-  - ```sudo chmod a+rx starter.sh```
-
+```bash
+  - sudo apt-get update
+  - sudo apt-get upgrade
+  - sudo apt install python3-pip
+  - pip3 install pyserial
+  - pip3 install paho-mqtt
+  - sudo adduser $USER dialout
+  - cd ~/Desktop/FirmwareRPi
+  - sudo chmod a+rx starter.sh
+```
 
 1.  To run the program just double click on starter.sh file
-  1.  or execute `python3 /home/pi/Desktop/Firmware/Firmware.py`
+  1.  or execute `python3 /home/pi/Desktop/FirmwareRPi/Firmware.py`
 
 This program make use of MQTT to communicate with the webapp.
 
@@ -100,10 +103,11 @@ This program make use of MQTT to communicate with the webapp.
 #### Installing Pre-Reqs on Linux(Ubuntu or Debian Based Distro)
 
   On Ubuntu or any Debian based Linux distro execute the following commands
-  - ```sudo apt-get install -y gcc-avr```
-  - ```sudo apt-get install -y avrdude```
-  - ```sudo apt-get install avr-libc```
-
+```bash
+  - sudo apt-get install -y gcc-avr
+  - sudo apt-get install -y avrdude
+  - sudo apt-get install avr-libc
+```
 
 ### Setup
 
@@ -161,6 +165,60 @@ Pins connections
 | `3` | `TX1` | 
 | `4 & 5` | `Shorted` | 
 | `14` | `5V` | 
+
+
+## Dashboard <a name = "dashboard"></a>
+
+You can use the dashboard with the link below:
+
+[https://nodered-proxy.production.wrapdrive.tech/ui/#!/0](https://nodered-proxy.production.wrapdrive.tech/ui/#!/0)
+![dash](artwork/dashboard.png)
+
+
+  ```diff
+  - The dashboard is running on a production server that is meant for testing only. You should install and configure the dashboard on your Raspberry Pi or local server to keep it running.
+  ```
+
+### Installing and Configuring Node-RED on Raspberry Pi
+
+Conifguring NodeRED, MQTT is required only one time.
+
+Open the terminal and execute the following commands
+
+```
+- sudo chmod a+rx starter.sh
+- sudo apt install ufw
+- sudo ufw enable
+- sudo ufw allow tcp http https 1883 8883 1880
+```
+##### Installing MQTT(Mosquitto)
+Open the terminal and execute the following commands
+
+```
+- sudo apt install -y mosquitto mosquitto-clients
+- sudo systemctl enable mosquitto.service
+- mosquitto -v
+```
+##### Installing and Configuring NodeRED
+Open the terminal and execute the following commands
+
+```
+- bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)
+- sudo systemctl enable nodered.service
+- npm install node-red-dashboard 
+- sudo npm install node-red-dashboard
+- sudo systemctl restart nodered.service
+```
+Then open NodeRED in your raspberry pi or using any other device which is connected to the same network
+as your Raspberry Pi is.
+In the browser you can type http://raspberrypi.local:1880 to open the node-red
+
+- Once node-red is opened, click on the menu button on the top left corner of the app and click on import.
+- Click on `select file to import` and select flows.json present in the `dashboard` directory of this repo.
+- After flows are imported, click on Deploy button on the top of the screen to save the changes.
+- You can access the Dashboard using http://raspberrypi.local:1880/ui
+
+
 
 ## Components Used
 
