@@ -1,0 +1,2591 @@
+   1               		.file	"usart.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	setup_usart
+  13               	setup_usart:
+  14               	.LVL0:
+  15               	.LFB1:
+  16               		.file 1 "usart.c"
+   1:usart.c       **** 
+   2:usart.c       **** 
+   3:usart.c       **** #include <avr/io.h>
+   4:usart.c       **** #include <inttypes.h>
+   5:usart.c       **** #include <avr/interrupt.h>
+   6:usart.c       **** #include <avr/pgmspace.h>
+   7:usart.c       **** #include "usart.h"
+   8:usart.c       **** 
+   9:usart.c       **** /* init the usart buffers */
+  10:usart.c       **** usart_t usart[USART0 + USART1 + USART2 + USART3] = {
+  11:usart.c       **** #if USART0 == 1
+  12:usart.c       ****     {{{{}, 0, 0}, {{}, 0, 0}}, &UBRR0H, &UBRR0L, &UCSR0B, &UCSR0C},
+  13:usart.c       **** #endif
+  14:usart.c       **** #if USART1 == 1
+  15:usart.c       ****     {{{{}, 0, 0}, {{}, 0, 0}}, &UBRR1H, &UBRR1L, &UCSR1B, &UCSR1C},
+  16:usart.c       **** #endif
+  17:usart.c       **** #if USART2 == 1
+  18:usart.c       ****     {{{{}, 0, 0}, {{}, 0, 0}}, &UBRR2H, &UBRR2L, &UCSR2B, &UCSR2C},
+  19:usart.c       **** #endif
+  20:usart.c       **** #if USART3 == 1
+  21:usart.c       ****     {{{{}, 0, 0}, {{}, 0, 0}}, &UBRR3H, &UBRR3L, &UCSR3B, &UCSR3C}
+  22:usart.c       **** #endif
+  23:usart.c       **** };
+  24:usart.c       **** 
+  25:usart.c       **** void setup_usart(uint8_t usart_number, uint32_t baudrate, uint8_t framelength, uint8_t parity, uint
+  26:usart.c       **** {
+  17               		.loc 1 26 1 view -0
+  18               		.cfi_startproc
+  19               		.loc 1 26 1 is_stmt 0 view .LVU1
+  20 0000 7F92      		push r7
+  21               	.LCFI0:
+  22               		.cfi_def_cfa_offset 4
+  23               		.cfi_offset 7, -3
+  24 0002 8F92      		push r8
+  25               	.LCFI1:
+  26               		.cfi_def_cfa_offset 5
+  27               		.cfi_offset 8, -4
+  28 0004 9F92      		push r9
+  29               	.LCFI2:
+  30               		.cfi_def_cfa_offset 6
+  31               		.cfi_offset 9, -5
+  32 0006 AF92      		push r10
+  33               	.LCFI3:
+  34               		.cfi_def_cfa_offset 7
+  35               		.cfi_offset 10, -6
+  36 0008 BF92      		push r11
+  37               	.LCFI4:
+  38               		.cfi_def_cfa_offset 8
+  39               		.cfi_offset 11, -7
+  40 000a CF92      		push r12
+  41               	.LCFI5:
+  42               		.cfi_def_cfa_offset 9
+  43               		.cfi_offset 12, -8
+  44 000c DF92      		push r13
+  45               	.LCFI6:
+  46               		.cfi_def_cfa_offset 10
+  47               		.cfi_offset 13, -9
+  48 000e EF92      		push r14
+  49               	.LCFI7:
+  50               		.cfi_def_cfa_offset 11
+  51               		.cfi_offset 14, -10
+  52 0010 FF92      		push r15
+  53               	.LCFI8:
+  54               		.cfi_def_cfa_offset 12
+  55               		.cfi_offset 15, -11
+  56 0012 0F93      		push r16
+  57               	.LCFI9:
+  58               		.cfi_def_cfa_offset 13
+  59               		.cfi_offset 16, -12
+  60 0014 1F93      		push r17
+  61               	.LCFI10:
+  62               		.cfi_def_cfa_offset 14
+  63               		.cfi_offset 17, -13
+  64 0016 CF93      		push r28
+  65               	.LCFI11:
+  66               		.cfi_def_cfa_offset 15
+  67               		.cfi_offset 28, -14
+  68 0018 DF93      		push r29
+  69               	.LCFI12:
+  70               		.cfi_def_cfa_offset 16
+  71               		.cfi_offset 29, -15
+  72               	/* prologue: function */
+  73               	/* frame size = 0 */
+  74               	/* stack size = 13 */
+  75               	.L__stack_usage = 13
+  76 001a 182F      		mov r17,r24
+  77 001c 4A01      		movw r8,r20
+  78 001e 5B01      		movw r10,r22
+  79 0020 C22F      		mov r28,r18
+  80 0022 7E2C      		mov r7,r14
+  27:usart.c       **** 
+  28:usart.c       ****     /* calculate and set the baudrate */
+  29:usart.c       ****     uint16_t baud = (F_CPU / 8 / baudrate - 1) / 2;
+  81               		.loc 1 29 5 is_stmt 1 view .LVU2
+  82               		.loc 1 29 32 is_stmt 0 view .LVU3
+  83 0024 60E8      		ldi r22,lo8(-128)
+  84 0026 74E8      		ldi r23,lo8(-124)
+  85 0028 8EE1      		ldi r24,lo8(30)
+  86 002a 90E0      		ldi r25,0
+  87 002c A501      		movw r20,r10
+  88               	.LVL1:
+  89               		.loc 1 29 32 view .LVU4
+  90 002e 9401      		movw r18,r8
+  91               	.LVL2:
+  92               		.loc 1 29 32 view .LVU5
+  93 0030 0E94 0000 		call __udivmodsi4
+  94               		.loc 1 29 43 view .LVU6
+  95 0034 6901      		movw r12,r18
+  96 0036 7A01      		movw r14,r20
+  97               	.LVL3:
+  98               		.loc 1 29 43 view .LVU7
+  99 0038 81E0      		ldi r24,1
+ 100 003a C81A      		sub r12,r24
+ 101 003c D108      		sbc r13,__zero_reg__
+ 102 003e E108      		sbc r14,__zero_reg__
+ 103 0040 F108      		sbc r15,__zero_reg__
+ 104               	.LVL4:
+ 105               		.loc 1 29 48 view .LVU8
+ 106 0042 F694      		lsr r15
+ 107 0044 E794      		ror r14
+ 108 0046 D794      		ror r13
+ 109 0048 C794      		ror r12
+ 110               	.LVL5:
+  30:usart.c       ****     *usart[usart_number].ubrrh = (uint8_t)(baud >> 8);
+ 111               		.loc 1 30 5 is_stmt 1 view .LVU9
+ 112               		.loc 1 30 25 is_stmt 0 view .LVU10
+ 113 004a 412F      		mov r20,r17
+ 114 004c 50E0      		ldi r21,0
+ 115 004e 8CE0      		ldi r24,lo8(12)
+ 116 0050 91E0      		ldi r25,lo8(1)
+ 117 0052 189F      		mul r17,r24
+ 118 0054 D001      		movw r26,r0
+ 119 0056 199F      		mul r17,r25
+ 120 0058 B00D      		add r27,r0
+ 121 005a 1124      		clr __zero_reg__
+ 122 005c CD01      		movw r24,r26
+ 123 005e 8050      		subi r24,lo8(-(usart))
+ 124 0060 9040      		sbci r25,hi8(-(usart))
+ 125 0062 FD01      		movw r30,r26
+ 126 0064 E050      		subi r30,lo8(-(usart+260))
+ 127 0066 F040      		sbci r31,hi8(-(usart+260))
+ 128 0068 0190      		ld __tmp_reg__,Z+
+ 129 006a F081      		ld r31,Z
+ 130 006c E02D      		mov r30,__tmp_reg__
+ 131               		.loc 1 30 49 view .LVU11
+ 132 006e 2D2D      		mov r18,r13
+ 133 0070 3327      		clr r19
+ 134               		.loc 1 30 32 view .LVU12
+ 135 0072 2083      		st Z,r18
+  31:usart.c       ****     *usart[usart_number].ubrrl = (uint8_t)(baud & 0x0ff);
+ 136               		.loc 1 31 5 is_stmt 1 view .LVU13
+ 137               		.loc 1 31 25 is_stmt 0 view .LVU14
+ 138 0074 FD01      		movw r30,r26
+ 139 0076 E050      		subi r30,lo8(-(usart+262))
+ 140 0078 F040      		sbci r31,hi8(-(usart+262))
+ 141 007a 0190      		ld __tmp_reg__,Z+
+ 142 007c F081      		ld r31,Z
+ 143 007e E02D      		mov r30,__tmp_reg__
+ 144               		.loc 1 31 32 view .LVU15
+ 145 0080 C082      		st Z,r12
+  32:usart.c       **** 
+  33:usart.c       ****     /* activate transmitter, receiver and receiver interrupt */
+  34:usart.c       ****     *usart[usart_number].ucsrb |= (1 << 3); /* TXEN */
+ 146               		.loc 1 34 5 is_stmt 1 view .LVU16
+ 147               		.loc 1 34 25 is_stmt 0 view .LVU17
+ 148 0082 A050      		subi r26,lo8(-(usart+264))
+ 149 0084 B040      		sbci r27,hi8(-(usart+264))
+ 150 0086 ED91      		ld r30,X+
+ 151 0088 FC91      		ld r31,X
+ 152 008a 1197      		sbiw r26,1
+ 153               		.loc 1 34 32 view .LVU18
+ 154 008c 2081      		ld r18,Z
+ 155 008e 2860      		ori r18,lo8(8)
+ 156 0090 2083      		st Z,r18
+  35:usart.c       ****     *usart[usart_number].ucsrb |= (1 << 4); /* RXEN */
+ 157               		.loc 1 35 5 is_stmt 1 view .LVU19
+ 158               		.loc 1 35 25 is_stmt 0 view .LVU20
+ 159 0092 ED91      		ld r30,X+
+ 160 0094 FC91      		ld r31,X
+ 161 0096 1197      		sbiw r26,1
+ 162               		.loc 1 35 32 view .LVU21
+ 163 0098 2081      		ld r18,Z
+ 164 009a 2061      		ori r18,lo8(16)
+ 165 009c 2083      		st Z,r18
+  36:usart.c       ****     *usart[usart_number].ucsrb |= (1 << 7); /* RXCIE */
+ 166               		.loc 1 36 5 is_stmt 1 view .LVU22
+ 167               		.loc 1 36 25 is_stmt 0 view .LVU23
+ 168 009e ED91      		ld r30,X+
+ 169 00a0 FC91      		ld r31,X
+ 170 00a2 1197      		sbiw r26,1
+ 171               		.loc 1 36 32 view .LVU24
+ 172 00a4 2081      		ld r18,Z
+ 173 00a6 2068      		ori r18,lo8(-128)
+ 174 00a8 2083      		st Z,r18
+  37:usart.c       **** 
+  38:usart.c       ****     /* set framelength bits */
+  39:usart.c       ****     switch (framelength)
+ 175               		.loc 1 39 5 is_stmt 1 view .LVU25
+ 176 00aa C730      		cpi r28,lo8(7)
+ 177 00ac 01F4      		brne .+2
+ 178 00ae 00C0      		rjmp .L2
+ 179 00b0 00F4      		brsh .L3
+ 180 00b2 C530      		cpi r28,lo8(5)
+ 181 00b4 01F0      		breq .L4
+ 182 00b6 C630      		cpi r28,lo8(6)
+ 183 00b8 01F4      		brne .+2
+ 184 00ba 00C0      		rjmp .L5
+ 185               	.LVL6:
+ 186               	.L6:
+  40:usart.c       ****     {
+  41:usart.c       ****     case 5:
+  42:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 1); /* UCSZ0 = 0 */
+  43:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+  44:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+  45:usart.c       ****         break;
+  46:usart.c       ****     case 6:
+  47:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 1);  /* UCSZ0 = 1 */
+  48:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+  49:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+  50:usart.c       ****         break;
+  51:usart.c       ****     case 7:
+  52:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 1); /* UCSZ0 = 0 */
+  53:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+  54:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+  55:usart.c       ****         break;
+  56:usart.c       ****     case 8:
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 1);  /* UCSZ0 = 1 */
+  58:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+  59:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+  60:usart.c       ****         break;
+  61:usart.c       ****     case 9:
+  62:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 1); /* UCSZ0 = 1 */
+  63:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2); /* UCSZ1 = 1 */
+  64:usart.c       ****         *usart[usart_number].ucsrb |= (1 << 2); /* UCSZ2 = 1 */
+  65:usart.c       ****         break;
+  66:usart.c       ****     }
+  67:usart.c       **** 
+  68:usart.c       ****     /* set bits for parity */
+  69:usart.c       ****     switch (parity)
+ 187               		.loc 1 69 5 view .LVU26
+  70:usart.c       ****     {
+  71:usart.c       ****     case 'N':                                    /* None */
+  72:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 4); /* UPM0 = 0 */
+ 188               		.loc 1 72 29 is_stmt 0 view .LVU27
+ 189 00bc 8CE0      		ldi r24,lo8(12)
+ 190 00be 91E0      		ldi r25,lo8(1)
+ 191 00c0 489F      		mul r20,r24
+ 192 00c2 F001      		movw r30,r0
+ 193 00c4 499F      		mul r20,r25
+ 194 00c6 F00D      		add r31,r0
+ 195 00c8 589F      		mul r21,r24
+ 196 00ca F00D      		add r31,r0
+ 197 00cc 1124      		clr r1
+ 198 00ce E050      		subi r30,lo8(-(usart+266))
+ 199 00d0 F040      		sbci r31,hi8(-(usart+266))
+ 200 00d2 A081      		ld r26,Z
+ 201 00d4 B181      		ldd r27,Z+1
+  69:usart.c       ****     {
+ 202               		.loc 1 69 5 view .LVU28
+ 203 00d6 0E34      		cpi r16,lo8(78)
+ 204 00d8 01F4      		brne .+2
+ 205 00da 00C0      		rjmp .L9
+ 206 00dc 0F34      		cpi r16,lo8(79)
+ 207 00de 01F4      		brne .+2
+ 208 00e0 00C0      		rjmp .L10
+ 209 00e2 0534      		cpi r16,lo8(69)
+ 210 00e4 01F0      		breq .+2
+ 211 00e6 00C0      		rjmp .L12
+  73:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 5); /* UPM1 = 0 */
+  74:usart.c       ****         break;
+  75:usart.c       ****     case 'E':                                    /* Even */
+  76:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 4); /* UPM0 = 0 */
+ 212               		.loc 1 76 9 is_stmt 1 view .LVU29
+ 213               		.loc 1 76 36 is_stmt 0 view .LVU30
+ 214 00e8 8C91      		ld r24,X
+ 215 00ea 8F7E      		andi r24,lo8(-17)
+ 216               	.L17:
+  77:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 5);  /* UPM1 = 1 */
+  78:usart.c       ****         break;
+  79:usart.c       ****     case 'O':                                   /* Odd */
+  80:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 4); /* UPM0 = 1 */
+ 217               		.loc 1 80 36 view .LVU31
+ 218 00ec 8C93      		st X,r24
+  81:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 5); /* UPM1 = 1 */
+ 219               		.loc 1 81 9 is_stmt 1 view .LVU32
+ 220               		.loc 1 81 29 is_stmt 0 view .LVU33
+ 221 00ee 0190      		ld __tmp_reg__,Z+
+ 222 00f0 F081      		ld r31,Z
+ 223 00f2 E02D      		mov r30,__tmp_reg__
+ 224               		.loc 1 81 36 view .LVU34
+ 225 00f4 8081      		ld r24,Z
+ 226 00f6 8062      		ori r24,lo8(32)
+ 227 00f8 00C0      		rjmp .L16
+ 228               	.LVL7:
+ 229               	.L3:
+  39:usart.c       ****     {
+ 230               		.loc 1 39 5 view .LVU35
+ 231 00fa C830      		cpi r28,lo8(8)
+ 232 00fc 01F4      		brne .+2
+ 233 00fe 00C0      		rjmp .L7
+ 234 0100 C930      		cpi r28,lo8(9)
+ 235 0102 01F4      		brne .L6
+  62:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2); /* UCSZ1 = 1 */
+ 236               		.loc 1 62 9 is_stmt 1 view .LVU36
+  62:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2); /* UCSZ1 = 1 */
+ 237               		.loc 1 62 29 is_stmt 0 view .LVU37
+ 238 0104 FC01      		movw r30,r24
+ 239 0106 E65F      		subi r30,-10
+ 240 0108 FE4F      		sbci r31,-2
+ 241 010a 2081      		ld r18,Z
+ 242 010c 3181      		ldd r19,Z+1
+  62:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2); /* UCSZ1 = 1 */
+ 243               		.loc 1 62 36 view .LVU38
+ 244 010e E901      		movw r28,r18
+ 245               	.LVL8:
+  62:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2); /* UCSZ1 = 1 */
+ 246               		.loc 1 62 36 view .LVU39
+ 247 0110 8881      		ld r24,Y
+ 248 0112 8260      		ori r24,lo8(2)
+ 249 0114 8883      		st Y,r24
+  63:usart.c       ****         *usart[usart_number].ucsrb |= (1 << 2); /* UCSZ2 = 1 */
+ 250               		.loc 1 63 9 is_stmt 1 view .LVU40
+  63:usart.c       ****         *usart[usart_number].ucsrb |= (1 << 2); /* UCSZ2 = 1 */
+ 251               		.loc 1 63 29 is_stmt 0 view .LVU41
+ 252 0116 0190      		ld __tmp_reg__,Z+
+ 253 0118 F081      		ld r31,Z
+ 254 011a E02D      		mov r30,__tmp_reg__
+  63:usart.c       ****         *usart[usart_number].ucsrb |= (1 << 2); /* UCSZ2 = 1 */
+ 255               		.loc 1 63 36 view .LVU42
+ 256 011c 8081      		ld r24,Z
+ 257 011e 8460      		ori r24,lo8(4)
+ 258 0120 8083      		st Z,r24
+  64:usart.c       ****         break;
+ 259               		.loc 1 64 9 is_stmt 1 view .LVU43
+  64:usart.c       ****         break;
+ 260               		.loc 1 64 29 is_stmt 0 view .LVU44
+ 261 0122 ED91      		ld r30,X+
+ 262 0124 FC91      		ld r31,X
+  64:usart.c       ****         break;
+ 263               		.loc 1 64 36 view .LVU45
+ 264 0126 8081      		ld r24,Z
+ 265 0128 8460      		ori r24,lo8(4)
+ 266 012a 00C0      		rjmp .L15
+ 267               	.LVL9:
+ 268               	.L4:
+  42:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 269               		.loc 1 42 9 is_stmt 1 view .LVU46
+  42:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 270               		.loc 1 42 29 is_stmt 0 view .LVU47
+ 271 012c FC01      		movw r30,r24
+ 272 012e E65F      		subi r30,-10
+ 273 0130 FE4F      		sbci r31,-2
+ 274 0132 2081      		ld r18,Z
+ 275 0134 3181      		ldd r19,Z+1
+  42:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 276               		.loc 1 42 36 view .LVU48
+ 277 0136 E901      		movw r28,r18
+ 278               	.LVL10:
+  42:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 279               		.loc 1 42 36 view .LVU49
+ 280 0138 9881      		ld r25,Y
+ 281 013a 9D7F      		andi r25,lo8(-3)
+ 282               	.L21:
+  47:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 283               		.loc 1 47 36 view .LVU50
+ 284 013c 9883      		st Y,r25
+  48:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 285               		.loc 1 48 9 is_stmt 1 view .LVU51
+  48:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 286               		.loc 1 48 29 is_stmt 0 view .LVU52
+ 287 013e 0190      		ld __tmp_reg__,Z+
+ 288 0140 F081      		ld r31,Z
+ 289 0142 E02D      		mov r30,__tmp_reg__
+  48:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 290               		.loc 1 48 36 view .LVU53
+ 291 0144 8081      		ld r24,Z
+ 292 0146 8B7F      		andi r24,lo8(-5)
+ 293               	.L19:
+  58:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 294               		.loc 1 58 36 view .LVU54
+ 295 0148 8083      		st Z,r24
+  59:usart.c       ****         break;
+ 296               		.loc 1 59 9 is_stmt 1 view .LVU55
+  59:usart.c       ****         break;
+ 297               		.loc 1 59 29 is_stmt 0 view .LVU56
+ 298 014a ED91      		ld r30,X+
+ 299 014c FC91      		ld r31,X
+  59:usart.c       ****         break;
+ 300               		.loc 1 59 36 view .LVU57
+ 301 014e 8081      		ld r24,Z
+ 302 0150 8B7F      		andi r24,lo8(-5)
+ 303               	.L15:
+  64:usart.c       ****         break;
+ 304               		.loc 1 64 36 view .LVU58
+ 305 0152 8083      		st Z,r24
+  65:usart.c       ****     }
+ 306               		.loc 1 65 9 is_stmt 1 view .LVU59
+ 307 0154 00C0      		rjmp .L6
+ 308               	.LVL11:
+ 309               	.L5:
+  47:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 310               		.loc 1 47 9 view .LVU60
+  47:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 311               		.loc 1 47 29 is_stmt 0 view .LVU61
+ 312 0156 FC01      		movw r30,r24
+ 313 0158 E65F      		subi r30,-10
+ 314 015a FE4F      		sbci r31,-2
+ 315 015c 2081      		ld r18,Z
+ 316 015e 3181      		ldd r19,Z+1
+  47:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 317               		.loc 1 47 36 view .LVU62
+ 318 0160 E901      		movw r28,r18
+ 319               	.LVL12:
+  47:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 2); /* UCSZ1 = 0 */
+ 320               		.loc 1 47 36 view .LVU63
+ 321 0162 9881      		ld r25,Y
+ 322 0164 9260      		ori r25,lo8(2)
+ 323 0166 00C0      		rjmp .L21
+ 324               	.LVL13:
+ 325               	.L2:
+  52:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 326               		.loc 1 52 9 is_stmt 1 view .LVU64
+  52:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 327               		.loc 1 52 29 is_stmt 0 view .LVU65
+ 328 0168 FC01      		movw r30,r24
+ 329 016a E65F      		subi r30,-10
+ 330 016c FE4F      		sbci r31,-2
+ 331 016e 2081      		ld r18,Z
+ 332 0170 3181      		ldd r19,Z+1
+  52:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 333               		.loc 1 52 36 view .LVU66
+ 334 0172 E901      		movw r28,r18
+ 335               	.LVL14:
+  52:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 336               		.loc 1 52 36 view .LVU67
+ 337 0174 9881      		ld r25,Y
+ 338 0176 9D7F      		andi r25,lo8(-3)
+ 339               	.L20:
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 340               		.loc 1 57 36 view .LVU68
+ 341 0178 9883      		st Y,r25
+  58:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 342               		.loc 1 58 9 is_stmt 1 view .LVU69
+  58:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 343               		.loc 1 58 29 is_stmt 0 view .LVU70
+ 344 017a 0190      		ld __tmp_reg__,Z+
+ 345 017c F081      		ld r31,Z
+ 346 017e E02D      		mov r30,__tmp_reg__
+  58:usart.c       ****         *usart[usart_number].ucsrb &= ~(1 << 2); /* UCSZ2 = 0 */
+ 347               		.loc 1 58 36 view .LVU71
+ 348 0180 8081      		ld r24,Z
+ 349 0182 8460      		ori r24,lo8(4)
+ 350 0184 00C0      		rjmp .L19
+ 351               	.LVL15:
+ 352               	.L7:
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 353               		.loc 1 57 9 is_stmt 1 view .LVU72
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 354               		.loc 1 57 29 is_stmt 0 view .LVU73
+ 355 0186 FC01      		movw r30,r24
+ 356 0188 E65F      		subi r30,-10
+ 357 018a FE4F      		sbci r31,-2
+ 358 018c 2081      		ld r18,Z
+ 359 018e 3181      		ldd r19,Z+1
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 360               		.loc 1 57 36 view .LVU74
+ 361 0190 E901      		movw r28,r18
+ 362               	.LVL16:
+  57:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 2);  /* UCSZ1 = 1 */
+ 363               		.loc 1 57 36 view .LVU75
+ 364 0192 9881      		ld r25,Y
+ 365 0194 9260      		ori r25,lo8(2)
+ 366 0196 00C0      		rjmp .L20
+ 367               	.L9:
+  72:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 5); /* UPM1 = 0 */
+ 368               		.loc 1 72 9 is_stmt 1 view .LVU76
+  72:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 5); /* UPM1 = 0 */
+ 369               		.loc 1 72 36 is_stmt 0 view .LVU77
+ 370 0198 8C91      		ld r24,X
+ 371 019a 8F7E      		andi r24,lo8(-17)
+ 372 019c 8C93      		st X,r24
+  73:usart.c       ****         break;
+ 373               		.loc 1 73 9 is_stmt 1 view .LVU78
+  73:usart.c       ****         break;
+ 374               		.loc 1 73 29 is_stmt 0 view .LVU79
+ 375 019e 0190      		ld __tmp_reg__,Z+
+ 376 01a0 F081      		ld r31,Z
+ 377 01a2 E02D      		mov r30,__tmp_reg__
+  73:usart.c       ****         break;
+ 378               		.loc 1 73 36 view .LVU80
+ 379 01a4 8081      		ld r24,Z
+ 380 01a6 8F7D      		andi r24,lo8(-33)
+ 381               	.L16:
+ 382               		.loc 1 81 36 view .LVU81
+ 383 01a8 8083      		st Z,r24
+  82:usart.c       ****         break;
+ 384               		.loc 1 82 9 is_stmt 1 view .LVU82
+ 385               	.L12:
+  83:usart.c       ****     }
+  84:usart.c       **** 
+  85:usart.c       ****     /* set number of stopbits */
+  86:usart.c       ****     if (stopbits > 1)
+ 386               		.loc 1 86 5 view .LVU83
+  87:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 3); /* USBS = 1 */
+ 387               		.loc 1 87 29 is_stmt 0 view .LVU84
+ 388 01aa 8CE0      		ldi r24,lo8(12)
+ 389 01ac 91E0      		ldi r25,lo8(1)
+ 390 01ae 489F      		mul r20,r24
+ 391 01b0 F001      		movw r30,r0
+ 392 01b2 499F      		mul r20,r25
+ 393 01b4 F00D      		add r31,r0
+ 394 01b6 589F      		mul r21,r24
+ 395 01b8 F00D      		add r31,r0
+ 396 01ba 1124      		clr r1
+ 397 01bc E050      		subi r30,lo8(-(usart+266))
+ 398 01be F040      		sbci r31,hi8(-(usart+266))
+ 399 01c0 0190      		ld __tmp_reg__,Z+
+ 400 01c2 F081      		ld r31,Z
+ 401 01c4 E02D      		mov r30,__tmp_reg__
+  86:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 3); /* USBS = 1 */
+ 402               		.loc 1 86 8 view .LVU85
+ 403 01c6 D1E0      		ldi r29,lo8(1)
+ 404               		.loc 1 87 36 view .LVU86
+ 405 01c8 8081      		ld r24,Z
+  86:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 3); /* USBS = 1 */
+ 406               		.loc 1 86 8 view .LVU87
+ 407 01ca D715      		cp r29,r7
+ 408 01cc 00F4      		brsh .L13
+ 409               		.loc 1 87 9 is_stmt 1 view .LVU88
+ 410               		.loc 1 87 36 is_stmt 0 view .LVU89
+ 411 01ce 8860      		ori r24,lo8(8)
+ 412               	.L18:
+  88:usart.c       ****     else
+  89:usart.c       ****         *usart[usart_number].ucsrc &= ~(1 << 3); /* USBS = 0 */
+ 413               		.loc 1 89 36 view .LVU90
+ 414 01d0 8083      		st Z,r24
+ 415               	/* epilogue start */
+  90:usart.c       **** }
+ 416               		.loc 1 90 1 view .LVU91
+ 417 01d2 DF91      		pop r29
+ 418 01d4 CF91      		pop r28
+ 419 01d6 1F91      		pop r17
+ 420               	.LVL17:
+ 421               		.loc 1 90 1 view .LVU92
+ 422 01d8 0F91      		pop r16
+ 423               	.LVL18:
+ 424               		.loc 1 90 1 view .LVU93
+ 425 01da FF90      		pop r15
+ 426 01dc EF90      		pop r14
+ 427 01de DF90      		pop r13
+ 428 01e0 CF90      		pop r12
+ 429               	.LVL19:
+ 430               		.loc 1 90 1 view .LVU94
+ 431 01e2 BF90      		pop r11
+ 432 01e4 AF90      		pop r10
+ 433 01e6 9F90      		pop r9
+ 434 01e8 8F90      		pop r8
+ 435 01ea 7F90      		pop r7
+ 436               	.LVL20:
+ 437               		.loc 1 90 1 view .LVU95
+ 438 01ec 0895      		ret
+ 439               	.LVL21:
+ 440               	.L10:
+  80:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 5); /* UPM1 = 1 */
+ 441               		.loc 1 80 9 is_stmt 1 view .LVU96
+  80:usart.c       ****         *usart[usart_number].ucsrc |= (1 << 5); /* UPM1 = 1 */
+ 442               		.loc 1 80 36 is_stmt 0 view .LVU97
+ 443 01ee 8C91      		ld r24,X
+ 444 01f0 8061      		ori r24,lo8(16)
+ 445 01f2 00C0      		rjmp .L17
+ 446               	.L13:
+  89:usart.c       **** }
+ 447               		.loc 1 89 9 is_stmt 1 view .LVU98
+  89:usart.c       **** }
+ 448               		.loc 1 89 36 is_stmt 0 view .LVU99
+ 449 01f4 877F      		andi r24,lo8(-9)
+ 450 01f6 00C0      		rjmp .L18
+ 451               		.cfi_endproc
+ 452               	.LFE1:
+ 454               	.global	buffer_level
+ 456               	buffer_level:
+ 457               	.LVL22:
+ 458               	.LFB2:
+  91:usart.c       **** 
+  92:usart.c       **** uint8_t buffer_level(uint8_t usart_number, uint8_t direction)
+  93:usart.c       **** {
+ 459               		.loc 1 93 1 is_stmt 1 view -0
+ 460               		.cfi_startproc
+ 461               	/* prologue: function */
+ 462               	/* frame size = 0 */
+ 463               	/* stack size = 0 */
+ 464               	.L__stack_usage = 0
+  94:usart.c       ****     return usart[usart_number].buffer[direction].write - usart[usart_number].buffer[direction].read
+ 465               		.loc 1 94 5 view .LVU101
+ 466               		.loc 1 94 49 is_stmt 0 view .LVU102
+ 467 01f8 4CE0      		ldi r20,lo8(12)
+ 468 01fa 51E0      		ldi r21,lo8(1)
+ 469 01fc 849F      		mul r24,r20
+ 470 01fe 9001      		movw r18,r0
+ 471 0200 859F      		mul r24,r21
+ 472 0202 300D      		add r19,r0
+ 473 0204 1124      		clr __zero_reg__
+ 474 0206 82E8      		ldi r24,lo8(-126)
+ 475               	.LVL23:
+ 476               		.loc 1 94 49 view .LVU103
+ 477 0208 689F      		mul r22,r24
+ 478 020a 200D      		add r18,r0
+ 479 020c 311D      		adc r19,r1
+ 480 020e 1124      		clr __zero_reg__
+ 481 0210 F901      		movw r30,r18
+ 482 0212 E050      		subi r30,lo8(-(usart+129))
+ 483 0214 F040      		sbci r31,hi8(-(usart+129))
+ 484 0216 8081      		ld r24,Z
+ 485               		.loc 1 94 95 view .LVU104
+ 486 0218 2050      		subi r18,lo8(-(usart+128))
+ 487 021a 3040      		sbci r19,hi8(-(usart+128))
+ 488 021c F901      		movw r30,r18
+ 489 021e 9081      		ld r25,Z
+  95:usart.c       **** }
+ 490               		.loc 1 95 1 view .LVU105
+ 491 0220 891B      		sub r24,r25
+ 492               	/* epilogue start */
+ 493 0222 0895      		ret
+ 494               		.cfi_endproc
+ 495               	.LFE2:
+ 497               	.global	read_buffer
+ 499               	read_buffer:
+ 500               	.LVL24:
+ 501               	.LFB3:
+  96:usart.c       **** 
+  97:usart.c       **** uint8_t read_buffer(uint8_t usart_number, uint8_t direction, uint8_t *data)
+  98:usart.c       **** {
+ 502               		.loc 1 98 1 is_stmt 1 view -0
+ 503               		.cfi_startproc
+ 504               		.loc 1 98 1 is_stmt 0 view .LVU107
+ 505 0224 0F93      		push r16
+ 506               	.LCFI13:
+ 507               		.cfi_def_cfa_offset 4
+ 508               		.cfi_offset 16, -3
+ 509 0226 1F93      		push r17
+ 510               	.LCFI14:
+ 511               		.cfi_def_cfa_offset 5
+ 512               		.cfi_offset 17, -4
+ 513 0228 CF93      		push r28
+ 514               	.LCFI15:
+ 515               		.cfi_def_cfa_offset 6
+ 516               		.cfi_offset 28, -5
+ 517 022a DF93      		push r29
+ 518               	.LCFI16:
+ 519               		.cfi_def_cfa_offset 7
+ 520               		.cfi_offset 29, -6
+ 521               	/* prologue: function */
+ 522               	/* frame size = 0 */
+ 523               	/* stack size = 4 */
+ 524               	.L__stack_usage = 4
+ 525 022c 8A01      		movw r16,r20
+  99:usart.c       ****     // buffer empty?
+ 100:usart.c       ****     if (usart[usart_number].buffer[direction].read == usart[usart_number].buffer[direction].write)
+ 526               		.loc 1 100 5 is_stmt 1 view .LVU108
+ 527               		.loc 1 100 46 is_stmt 0 view .LVU109
+ 528 022e 4CE0      		ldi r20,lo8(12)
+ 529 0230 51E0      		ldi r21,lo8(1)
+ 530               	.LVL25:
+ 531               		.loc 1 100 46 view .LVU110
+ 532 0232 849F      		mul r24,r20
+ 533 0234 9001      		movw r18,r0
+ 534 0236 859F      		mul r24,r21
+ 535 0238 300D      		add r19,r0
+ 536 023a 1124      		clr __zero_reg__
+ 537 023c C901      		movw r24,r18
+ 538               	.LVL26:
+ 539               		.loc 1 100 46 view .LVU111
+ 540 023e 42E8      		ldi r20,lo8(-126)
+ 541 0240 649F      		mul r22,r20
+ 542 0242 800D      		add r24,r0
+ 543 0244 911D      		adc r25,r1
+ 544 0246 1124      		clr __zero_reg__
+ 545 0248 EC01      		movw r28,r24
+ 546 024a C050      		subi r28,lo8(-(usart))
+ 547 024c D040      		sbci r29,hi8(-(usart))
+ 548 024e FC01      		movw r30,r24
+ 549 0250 E050      		subi r30,lo8(-(usart+128))
+ 550 0252 F040      		sbci r31,hi8(-(usart+128))
+ 551 0254 2081      		ld r18,Z
+ 552               		.loc 1 100 92 view .LVU112
+ 553 0256 8050      		subi r24,lo8(-(usart+129))
+ 554 0258 9040      		sbci r25,hi8(-(usart+129))
+ 555 025a DC01      		movw r26,r24
+ 556 025c 8C91      		ld r24,X
+ 557               		.loc 1 100 8 view .LVU113
+ 558 025e 2817      		cp r18,r24
+ 559 0260 01F0      		breq .L25
+ 101:usart.c       ****         return 1;
+ 102:usart.c       ****     // read a byte from the buffer
+ 103:usart.c       ****     *data = usart[usart_number].buffer[direction].data[usart[usart_number].buffer[direction].read];
+ 560               		.loc 1 103 5 is_stmt 1 view .LVU114
+ 561               		.loc 1 103 93 is_stmt 0 view .LVU115
+ 562 0262 8081      		ld r24,Z
+ 563               		.loc 1 103 55 view .LVU116
+ 564 0264 C80F      		add r28,r24
+ 565 0266 D11D      		adc r29,__zero_reg__
+ 566 0268 8881      		ld r24,Y
+ 567               		.loc 1 103 11 view .LVU117
+ 568 026a D801      		movw r26,r16
+ 569 026c 8C93      		st X,r24
+ 104:usart.c       ****     // update read index
+ 105:usart.c       ****     usart[usart_number].buffer[direction].read = (usart[usart_number].buffer[direction].read + 1) &
+ 570               		.loc 1 105 5 is_stmt 1 view .LVU118
+ 571               		.loc 1 105 88 is_stmt 0 view .LVU119
+ 572 026e 8081      		ld r24,Z
+ 573               		.loc 1 105 94 view .LVU120
+ 574 0270 8F5F      		subi r24,lo8(-(1))
+ 575               		.loc 1 105 99 view .LVU121
+ 576 0272 8F77      		andi r24,lo8(127)
+ 577               		.loc 1 105 48 view .LVU122
+ 578 0274 8083      		st Z,r24
+ 579               		.loc 1 105 111 is_stmt 1 view .LVU123
+ 106:usart.c       ****     return 0;
+ 580               		.loc 1 106 5 view .LVU124
+ 581               		.loc 1 106 12 is_stmt 0 view .LVU125
+ 582 0276 80E0      		ldi r24,0
+ 583               	.L23:
+ 584               	/* epilogue start */
+ 107:usart.c       **** }
+ 585               		.loc 1 107 1 view .LVU126
+ 586 0278 DF91      		pop r29
+ 587 027a CF91      		pop r28
+ 588 027c 1F91      		pop r17
+ 589 027e 0F91      		pop r16
+ 590               	.LVL27:
+ 591               		.loc 1 107 1 view .LVU127
+ 592 0280 0895      		ret
+ 593               	.LVL28:
+ 594               	.L25:
+ 101:usart.c       ****     // read a byte from the buffer
+ 595               		.loc 1 101 16 view .LVU128
+ 596 0282 81E0      		ldi r24,lo8(1)
+ 597 0284 00C0      		rjmp .L23
+ 598               		.cfi_endproc
+ 599               	.LFE3:
+ 601               	.global	write_buffer
+ 603               	write_buffer:
+ 604               	.LVL29:
+ 605               	.LFB4:
+ 108:usart.c       **** 
+ 109:usart.c       **** uint8_t write_buffer(uint8_t usart_number, uint8_t direction, uint8_t data)
+ 110:usart.c       **** {
+ 606               		.loc 1 110 1 is_stmt 1 view -0
+ 607               		.cfi_startproc
+ 608               		.loc 1 110 1 is_stmt 0 view .LVU130
+ 609 0286 CF93      		push r28
+ 610               	.LCFI17:
+ 611               		.cfi_def_cfa_offset 4
+ 612               		.cfi_offset 28, -3
+ 613 0288 DF93      		push r29
+ 614               	.LCFI18:
+ 615               		.cfi_def_cfa_offset 5
+ 616               		.cfi_offset 29, -4
+ 617               	/* prologue: function */
+ 618               	/* frame size = 0 */
+ 619               	/* stack size = 2 */
+ 620               	.L__stack_usage = 2
+ 111:usart.c       ****     // calc index for the next byte
+ 112:usart.c       ****     uint8_t next = (usart[usart_number].buffer[direction].write + 1) & BUFFERMASK;
+ 621               		.loc 1 112 5 is_stmt 1 view .LVU131
+ 622               		.loc 1 112 58 is_stmt 0 view .LVU132
+ 623 028a ECE0      		ldi r30,lo8(12)
+ 624 028c F1E0      		ldi r31,lo8(1)
+ 625 028e 8E9F      		mul r24,r30
+ 626 0290 9001      		movw r18,r0
+ 627 0292 8F9F      		mul r24,r31
+ 628 0294 300D      		add r19,r0
+ 629 0296 1124      		clr __zero_reg__
+ 630 0298 F901      		movw r30,r18
+ 631 029a 82E8      		ldi r24,lo8(-126)
+ 632               	.LVL30:
+ 633               		.loc 1 112 58 view .LVU133
+ 634 029c 689F      		mul r22,r24
+ 635 029e E00D      		add r30,r0
+ 636 02a0 F11D      		adc r31,r1
+ 637 02a2 1124      		clr __zero_reg__
+ 638 02a4 DF01      		movw r26,r30
+ 639 02a6 A050      		subi r26,lo8(-(usart))
+ 640 02a8 B040      		sbci r27,hi8(-(usart))
+ 641 02aa EF01      		movw r28,r30
+ 642 02ac C050      		subi r28,lo8(-(usart+129))
+ 643 02ae D040      		sbci r29,hi8(-(usart+129))
+ 644 02b0 8881      		ld r24,Y
+ 645               		.loc 1 112 65 view .LVU134
+ 646 02b2 8F5F      		subi r24,lo8(-(1))
+ 647               		.loc 1 112 13 view .LVU135
+ 648 02b4 8F77      		andi r24,lo8(127)
+ 649               	.LVL31:
+ 650               		.loc 1 112 82 is_stmt 1 view .LVU136
+ 113:usart.c       ****     // wait if the buffer is full
+ 114:usart.c       ****     while (usart[usart_number].buffer[direction].read == next)
+ 651               		.loc 1 114 5 view .LVU137
+ 652               		.loc 1 114 49 is_stmt 0 view .LVU138
+ 653 02b6 E050      		subi r30,lo8(-(usart+128))
+ 654 02b8 F040      		sbci r31,hi8(-(usart+128))
+ 655               	.L27:
+ 115:usart.c       ****     {
+ 116:usart.c       ****         ;
+ 656               		.loc 1 116 9 is_stmt 1 discriminator 1 view .LVU139
+ 114:usart.c       ****     {
+ 657               		.loc 1 114 55 discriminator 1 view .LVU140
+ 114:usart.c       ****     {
+ 658               		.loc 1 114 49 is_stmt 0 discriminator 1 view .LVU141
+ 659 02ba 9081      		ld r25,Z
+ 114:usart.c       ****     {
+ 660               		.loc 1 114 55 discriminator 1 view .LVU142
+ 661 02bc 9817      		cp r25,r24
+ 662 02be 01F0      		breq .L27
+ 117:usart.c       ****     };
+ 663               		.loc 1 117 6 is_stmt 1 view .LVU143
+ 118:usart.c       ****     // write the byte to the buffer
+ 119:usart.c       ****     usart[usart_number].buffer[direction].data[usart[usart_number].buffer[direction].write] = data;
+ 664               		.loc 1 119 5 view .LVU144
+ 665               		.loc 1 119 85 is_stmt 0 view .LVU145
+ 666 02c0 FD01      		movw r30,r26
+ 667 02c2 EF57      		subi r30,127
+ 668 02c4 FF4F      		sbci r31,-1
+ 669 02c6 9081      		ld r25,Z
+ 670               		.loc 1 119 93 view .LVU146
+ 671 02c8 A90F      		add r26,r25
+ 672 02ca B11D      		adc r27,__zero_reg__
+ 673 02cc 4C93      		st X,r20
+ 120:usart.c       ****     // update write index
+ 121:usart.c       ****     usart[usart_number].buffer[direction].write = next;
+ 674               		.loc 1 121 5 is_stmt 1 view .LVU147
+ 675               		.loc 1 121 49 is_stmt 0 view .LVU148
+ 676 02ce 8083      		st Z,r24
+ 122:usart.c       **** 
+ 123:usart.c       ****     if (direction == TX)
+ 677               		.loc 1 123 5 is_stmt 1 view .LVU149
+ 678               		.loc 1 123 8 is_stmt 0 view .LVU150
+ 679 02d0 6130      		cpi r22,lo8(1)
+ 680 02d2 01F4      		brne .L28
+ 124:usart.c       ****     {
+ 125:usart.c       ****         // Check if the USART is in 9-Bit mode
+ 126:usart.c       ****         if (*usart[usart_number].ucsrb & 4)
+ 681               		.loc 1 126 9 is_stmt 1 view .LVU151
+ 682               		.loc 1 126 33 is_stmt 0 view .LVU152
+ 683 02d4 C901      		movw r24,r18
+ 684               	.LVL32:
+ 685               		.loc 1 126 33 view .LVU153
+ 686 02d6 8050      		subi r24,lo8(-(usart))
+ 687 02d8 9040      		sbci r25,hi8(-(usart))
+ 688 02da 2050      		subi r18,lo8(-(usart+264))
+ 689 02dc 3040      		sbci r19,hi8(-(usart+264))
+ 690 02de D901      		movw r26,r18
+ 691 02e0 ED91      		ld r30,X+
+ 692 02e2 FC91      		ld r31,X
+ 693               	.LVL33:
+ 694               		.loc 1 126 13 view .LVU154
+ 695 02e4 2081      		ld r18,Z
+ 696               		.loc 1 126 12 view .LVU155
+ 697 02e6 22FF      		sbrs r18,2
+ 698 02e8 00C0      		rjmp .L29
+ 127:usart.c       ****         {
+ 128:usart.c       ****             // Activate transmit interrupt if the buffer level is even
+ 129:usart.c       ****             if (!((usart[usart_number].buffer[direction].write - usart[usart_number].buffer[directi
+ 699               		.loc 1 129 13 is_stmt 1 view .LVU156
+ 700               		.loc 1 129 57 is_stmt 0 view .LVU157
+ 701 02ea DC01      		movw r26,r24
+ 702 02ec AD5F      		subi r26,-3
+ 703 02ee BE4F      		sbci r27,-2
+ 704 02f0 2C91      		ld r18,X
+ 705               		.loc 1 129 103 view .LVU158
+ 706 02f2 8E5F      		subi r24,-2
+ 707 02f4 9E4F      		sbci r25,-2
+ 708               	.LVL34:
+ 709               		.loc 1 129 103 view .LVU159
+ 710 02f6 DC01      		movw r26,r24
+ 711 02f8 8C91      		ld r24,X
+ 712               	.LVL35:
+ 713               		.loc 1 129 110 view .LVU160
+ 714 02fa 281B      		sub r18,r24
+ 715               		.loc 1 129 16 view .LVU161
+ 716 02fc 20FD      		sbrc r18,0
+ 717 02fe 00C0      		rjmp .L28
+ 718               	.LVL36:
+ 719               	.L29:
+ 130:usart.c       ****                 *usart[usart_number].ucsrb |= (1 << 5);
+ 131:usart.c       ****         }
+ 132:usart.c       ****         else
+ 133:usart.c       ****         {
+ 134:usart.c       ****             // Activate transmit interrupt
+ 135:usart.c       ****             *usart[usart_number].ucsrb |= (1 << 5);
+ 720               		.loc 1 135 13 is_stmt 1 view .LVU162
+ 721               		.loc 1 135 40 is_stmt 0 view .LVU163
+ 722 0300 8081      		ld r24,Z
+ 723 0302 8062      		ori r24,lo8(32)
+ 724 0304 8083      		st Z,r24
+ 725               	.LVL37:
+ 726               	.L28:
+ 136:usart.c       ****         }
+ 137:usart.c       ****     }
+ 138:usart.c       ****     return 0;
+ 727               		.loc 1 138 5 is_stmt 1 view .LVU164
+ 139:usart.c       **** }
+ 728               		.loc 1 139 1 is_stmt 0 view .LVU165
+ 729 0306 80E0      		ldi r24,0
+ 730               	/* epilogue start */
+ 731 0308 DF91      		pop r29
+ 732 030a CF91      		pop r28
+ 733 030c 0895      		ret
+ 734               		.cfi_endproc
+ 735               	.LFE4:
+ 737               	.global	send_char
+ 739               	send_char:
+ 740               	.LVL38:
+ 741               	.LFB5:
+ 140:usart.c       **** 
+ 141:usart.c       **** uint8_t send_char(uint8_t usart_number, char c)
+ 142:usart.c       **** {
+ 742               		.loc 1 142 1 is_stmt 1 view -0
+ 743               		.cfi_startproc
+ 744               	/* prologue: function */
+ 745               	/* frame size = 0 */
+ 746               	/* stack size = 0 */
+ 747               	.L__stack_usage = 0
+ 748               		.loc 1 142 1 is_stmt 0 view .LVU167
+ 749 030e 462F      		mov r20,r22
+ 143:usart.c       ****     return write_buffer(usart_number, TX, (uint8_t)c);
+ 750               		.loc 1 143 5 is_stmt 1 view .LVU168
+ 751               		.loc 1 143 12 is_stmt 0 view .LVU169
+ 752 0310 61E0      		ldi r22,lo8(1)
+ 753               	.LVL39:
+ 754               		.loc 1 143 12 view .LVU170
+ 755 0312 0C94 0000 		jmp write_buffer
+ 756               	.LVL40:
+ 757               		.loc 1 143 12 view .LVU171
+ 758               		.cfi_endproc
+ 759               	.LFE5:
+ 761               	.global	recv_char
+ 763               	recv_char:
+ 764               	.LVL41:
+ 765               	.LFB6:
+ 144:usart.c       **** }
+ 145:usart.c       **** 
+ 146:usart.c       **** uint8_t recv_char(uint8_t usart_number, char *c)
+ 147:usart.c       **** {
+ 766               		.loc 1 147 1 is_stmt 1 view -0
+ 767               		.cfi_startproc
+ 768               	/* prologue: function */
+ 769               	/* frame size = 0 */
+ 770               	/* stack size = 0 */
+ 771               	.L__stack_usage = 0
+ 772               		.loc 1 147 1 is_stmt 0 view .LVU173
+ 773 0316 AB01      		movw r20,r22
+ 148:usart.c       ****     return read_buffer(usart_number, RX, (uint8_t *)c);
+ 774               		.loc 1 148 5 is_stmt 1 view .LVU174
+ 775               		.loc 1 148 12 is_stmt 0 view .LVU175
+ 776 0318 60E0      		ldi r22,0
+ 777               	.LVL42:
+ 778               		.loc 1 148 12 view .LVU176
+ 779 031a 0C94 0000 		jmp read_buffer
+ 780               	.LVL43:
+ 781               		.loc 1 148 12 view .LVU177
+ 782               		.cfi_endproc
+ 783               	.LFE6:
+ 785               	.global	send_str
+ 787               	send_str:
+ 788               	.LVL44:
+ 789               	.LFB7:
+ 149:usart.c       **** }
+ 150:usart.c       **** 
+ 151:usart.c       **** uint8_t send_str(uint8_t usart_number, char *str)
+ 152:usart.c       **** {
+ 790               		.loc 1 152 1 is_stmt 1 view -0
+ 791               		.cfi_startproc
+ 792               		.loc 1 152 1 is_stmt 0 view .LVU179
+ 793 031e 1F93      		push r17
+ 794               	.LCFI19:
+ 795               		.cfi_def_cfa_offset 4
+ 796               		.cfi_offset 17, -3
+ 797 0320 CF93      		push r28
+ 798               	.LCFI20:
+ 799               		.cfi_def_cfa_offset 5
+ 800               		.cfi_offset 28, -4
+ 801 0322 DF93      		push r29
+ 802               	.LCFI21:
+ 803               		.cfi_def_cfa_offset 6
+ 804               		.cfi_offset 29, -5
+ 805               	/* prologue: function */
+ 806               	/* frame size = 0 */
+ 807               	/* stack size = 3 */
+ 808               	.L__stack_usage = 3
+ 809 0324 182F      		mov r17,r24
+ 810 0326 EB01      		movw r28,r22
+ 153:usart.c       ****     while (*str)
+ 811               		.loc 1 153 5 is_stmt 1 view .LVU180
+ 812               	.LVL45:
+ 813               	.L34:
+ 814               		.loc 1 153 12 view .LVU181
+ 815 0328 6991      		ld r22,Y+
+ 816               	.LVL46:
+ 817               		.loc 1 153 12 is_stmt 0 view .LVU182
+ 818 032a 6111      		cpse r22,__zero_reg__
+ 819 032c 00C0      		rjmp .L36
+ 820               	.L33:
+ 154:usart.c       ****     {
+ 155:usart.c       ****         // if an error occurs
+ 156:usart.c       ****         if (send_char(usart_number, *str))
+ 157:usart.c       ****             return 1;
+ 158:usart.c       ****         str++;
+ 159:usart.c       ****     }
+ 160:usart.c       ****     return 0;
+ 161:usart.c       **** }
+ 821               		.loc 1 161 1 view .LVU183
+ 822 032e 862F      		mov r24,r22
+ 823               	/* epilogue start */
+ 824 0330 DF91      		pop r29
+ 825 0332 CF91      		pop r28
+ 826               	.LVL47:
+ 827               		.loc 1 161 1 view .LVU184
+ 828 0334 1F91      		pop r17
+ 829               	.LVL48:
+ 830               		.loc 1 161 1 view .LVU185
+ 831 0336 0895      		ret
+ 832               	.LVL49:
+ 833               	.L36:
+ 156:usart.c       ****             return 1;
+ 834               		.loc 1 156 9 is_stmt 1 view .LVU186
+ 156:usart.c       ****             return 1;
+ 835               		.loc 1 156 13 is_stmt 0 view .LVU187
+ 836 0338 812F      		mov r24,r17
+ 837 033a 0E94 0000 		call send_char
+ 838               	.LVL50:
+ 156:usart.c       ****             return 1;
+ 839               		.loc 1 156 12 view .LVU188
+ 840 033e 8823      		tst r24
+ 841 0340 01F0      		breq .L34
+ 157:usart.c       ****         str++;
+ 842               		.loc 1 157 20 view .LVU189
+ 843 0342 61E0      		ldi r22,lo8(1)
+ 844 0344 00C0      		rjmp .L33
+ 845               		.cfi_endproc
+ 846               	.LFE7:
+ 848               	.global	recv_str
+ 850               	recv_str:
+ 851               	.LVL51:
+ 852               	.LFB8:
+ 162:usart.c       **** 
+ 163:usart.c       **** uint8_t recv_str(uint8_t usart_number, char *str)
+ 164:usart.c       **** {
+ 853               		.loc 1 164 1 is_stmt 1 view -0
+ 854               		.cfi_startproc
+ 855               		.loc 1 164 1 is_stmt 0 view .LVU191
+ 856 0346 FF92      		push r15
+ 857               	.LCFI22:
+ 858               		.cfi_def_cfa_offset 4
+ 859               		.cfi_offset 15, -3
+ 860 0348 0F93      		push r16
+ 861               	.LCFI23:
+ 862               		.cfi_def_cfa_offset 5
+ 863               		.cfi_offset 16, -4
+ 864 034a 1F93      		push r17
+ 865               	.LCFI24:
+ 866               		.cfi_def_cfa_offset 6
+ 867               		.cfi_offset 17, -5
+ 868 034c CF93      		push r28
+ 869               	.LCFI25:
+ 870               		.cfi_def_cfa_offset 7
+ 871               		.cfi_offset 28, -6
+ 872 034e DF93      		push r29
+ 873               	.LCFI26:
+ 874               		.cfi_def_cfa_offset 8
+ 875               		.cfi_offset 29, -7
+ 876 0350 0F92      		push __tmp_reg__
+ 877               	.LCFI27:
+ 878               		.cfi_def_cfa_offset 9
+ 879 0352 CDB7      		in r28,__SP_L__
+ 880 0354 DEB7      		in r29,__SP_H__
+ 881               	.LCFI28:
+ 882               		.cfi_def_cfa_register 28
+ 883               	/* prologue: function */
+ 884               	/* frame size = 1 */
+ 885               	/* stack size = 6 */
+ 886               	.L__stack_usage = 6
+ 887 0356 F82E      		mov r15,r24
+ 888 0358 8B01      		movw r16,r22
+ 889               	.LVL52:
+ 890               	.L40:
+ 165:usart.c       ****     char c;
+ 891               		.loc 1 165 5 is_stmt 1 view .LVU192
+ 166:usart.c       ****     while (1)
+ 892               		.loc 1 166 5 view .LVU193
+ 167:usart.c       ****     {
+ 168:usart.c       ****         if (recv_char(usart_number, &c))
+ 893               		.loc 1 168 9 view .LVU194
+ 894               		.loc 1 168 13 is_stmt 0 view .LVU195
+ 895 035a BE01      		movw r22,r28
+ 896 035c 6F5F      		subi r22,-1
+ 897 035e 7F4F      		sbci r23,-1
+ 898 0360 8F2D      		mov r24,r15
+ 899 0362 0E94 0000 		call recv_char
+ 900               	.LVL53:
+ 901               		.loc 1 168 12 view .LVU196
+ 902 0366 8111      		cpse r24,__zero_reg__
+ 903 0368 00C0      		rjmp .L41
+ 169:usart.c       ****             return 1;
+ 170:usart.c       ****         *str = c;
+ 904               		.loc 1 170 9 is_stmt 1 view .LVU197
+ 905               		.loc 1 170 14 is_stmt 0 view .LVU198
+ 906 036a 8981      		ldd r24,Y+1
+ 907 036c F801      		movw r30,r16
+ 908 036e 8193      		st Z+,r24
+ 909 0370 8F01      		movw r16,r30
+ 910               	.LVL54:
+ 171:usart.c       ****         str++;
+ 911               		.loc 1 171 9 is_stmt 1 view .LVU199
+ 172:usart.c       ****         if (c == '\0')
+ 912               		.loc 1 172 9 view .LVU200
+ 913               		.loc 1 172 12 is_stmt 0 view .LVU201
+ 914 0372 8111      		cpse r24,__zero_reg__
+ 915 0374 00C0      		rjmp .L40
+ 916               	.L38:
+ 917               	/* epilogue start */
+ 173:usart.c       ****             return 0;
+ 174:usart.c       ****     }
+ 175:usart.c       **** }
+ 918               		.loc 1 175 1 view .LVU202
+ 919 0376 0F90      		pop __tmp_reg__
+ 920 0378 DF91      		pop r29
+ 921 037a CF91      		pop r28
+ 922 037c 1F91      		pop r17
+ 923 037e 0F91      		pop r16
+ 924               	.LVL55:
+ 925               		.loc 1 175 1 view .LVU203
+ 926 0380 FF90      		pop r15
+ 927               	.LVL56:
+ 928               		.loc 1 175 1 view .LVU204
+ 929 0382 0895      		ret
+ 930               	.LVL57:
+ 931               	.L41:
+ 169:usart.c       ****         *str = c;
+ 932               		.loc 1 169 20 view .LVU205
+ 933 0384 81E0      		ldi r24,lo8(1)
+ 934 0386 00C0      		rjmp .L38
+ 935               		.cfi_endproc
+ 936               	.LFE8:
+ 938               	.global	send_str_p
+ 940               	send_str_p:
+ 941               	.LVL58:
+ 942               	.LFB9:
+ 176:usart.c       **** 
+ 177:usart.c       **** uint8_t send_str_p(uint8_t usart_number, const char *str)
+ 178:usart.c       **** {
+ 943               		.loc 1 178 1 is_stmt 1 view -0
+ 944               		.cfi_startproc
+ 945               		.loc 1 178 1 is_stmt 0 view .LVU207
+ 946 0388 1F93      		push r17
+ 947               	.LCFI29:
+ 948               		.cfi_def_cfa_offset 4
+ 949               		.cfi_offset 17, -3
+ 950 038a CF93      		push r28
+ 951               	.LCFI30:
+ 952               		.cfi_def_cfa_offset 5
+ 953               		.cfi_offset 28, -4
+ 954 038c DF93      		push r29
+ 955               	.LCFI31:
+ 956               		.cfi_def_cfa_offset 6
+ 957               		.cfi_offset 29, -5
+ 958               	/* prologue: function */
+ 959               	/* frame size = 0 */
+ 960               	/* stack size = 3 */
+ 961               	.L__stack_usage = 3
+ 962 038e 182F      		mov r17,r24
+ 963 0390 EB01      		movw r28,r22
+ 179:usart.c       ****     char c;
+ 964               		.loc 1 179 5 is_stmt 1 view .LVU208
+ 180:usart.c       ****     while ((c = pgm_read_byte(str)))
+ 965               		.loc 1 180 5 view .LVU209
+ 966               	.LVL59:
+ 967               	.L44:
+ 968               		.loc 1 180 12 view .LVU210
+ 969               	.LBB8:
+ 970               		.loc 1 180 17 view .LVU211
+ 971               		.loc 1 180 17 view .LVU212
+ 972               		.loc 1 180 17 view .LVU213
+ 973 0392 FE01      		movw r30,r28
+ 974               	/* #APP */
+ 975               	 ;  180 "usart.c" 1
+ 976 0394 6491      		lpm r22, Z
+ 977               		
+ 978               	 ;  0 "" 2
+ 979               	.LVL60:
+ 980               		.loc 1 180 17 view .LVU214
+ 981               		.loc 1 180 17 is_stmt 0 view .LVU215
+ 982               	/* #NOAPP */
+ 983               	.LBE8:
+ 984               		.loc 1 180 12 view .LVU216
+ 985 0396 6111      		cpse r22,__zero_reg__
+ 986 0398 00C0      		rjmp .L46
+ 987               	.LVL61:
+ 988               	.L43:
+ 181:usart.c       ****     {
+ 182:usart.c       ****         if (send_char(usart_number, c))
+ 183:usart.c       ****             return 1;
+ 184:usart.c       ****         str++;
+ 185:usart.c       ****     }
+ 186:usart.c       ****     return 0;
+ 187:usart.c       **** }
+ 989               		.loc 1 187 1 view .LVU217
+ 990 039a 862F      		mov r24,r22
+ 991               	/* epilogue start */
+ 992 039c DF91      		pop r29
+ 993 039e CF91      		pop r28
+ 994               	.LVL62:
+ 995               		.loc 1 187 1 view .LVU218
+ 996 03a0 1F91      		pop r17
+ 997               	.LVL63:
+ 998               		.loc 1 187 1 view .LVU219
+ 999 03a2 0895      		ret
+ 1000               	.LVL64:
+ 1001               	.L46:
+ 182:usart.c       ****             return 1;
+ 1002               		.loc 1 182 9 is_stmt 1 view .LVU220
+ 182:usart.c       ****             return 1;
+ 1003               		.loc 1 182 13 is_stmt 0 view .LVU221
+ 1004 03a4 812F      		mov r24,r17
+ 1005 03a6 0E94 0000 		call send_char
+ 1006               	.LVL65:
+ 182:usart.c       ****             return 1;
+ 1007               		.loc 1 182 12 view .LVU222
+ 1008 03aa 8111      		cpse r24,__zero_reg__
+ 1009 03ac 00C0      		rjmp .L47
+ 184:usart.c       ****     }
+ 1010               		.loc 1 184 9 is_stmt 1 view .LVU223
+ 184:usart.c       ****     }
+ 1011               		.loc 1 184 12 is_stmt 0 view .LVU224
+ 1012 03ae 2196      		adiw r28,1
+ 1013               	.LVL66:
+ 184:usart.c       ****     }
+ 1014               		.loc 1 184 12 view .LVU225
+ 1015 03b0 00C0      		rjmp .L44
+ 1016               	.LVL67:
+ 1017               	.L47:
+ 183:usart.c       ****         str++;
+ 1018               		.loc 1 183 20 view .LVU226
+ 1019 03b2 61E0      		ldi r22,lo8(1)
+ 1020 03b4 00C0      		rjmp .L43
+ 1021               		.cfi_endproc
+ 1022               	.LFE9:
+ 1024               	.global	send_mdb
+ 1026               	send_mdb:
+ 1027               	.LVL68:
+ 1028               	.LFB10:
+ 188:usart.c       **** 
+ 189:usart.c       **** uint8_t send_mdb(uint8_t usart_number, uint16_t mdb, uint8_t MDB_USART_TX_READY)
+ 190:usart.c       **** {
+ 1029               		.loc 1 190 1 is_stmt 1 view -0
+ 1030               		.cfi_startproc
+ 1031               		.loc 1 190 1 is_stmt 0 view .LVU228
+ 1032 03b6 1F93      		push r17
+ 1033               	.LCFI32:
+ 1034               		.cfi_def_cfa_offset 4
+ 1035               		.cfi_offset 17, -3
+ 1036 03b8 CF93      		push r28
+ 1037               	.LCFI33:
+ 1038               		.cfi_def_cfa_offset 5
+ 1039               		.cfi_offset 28, -4
+ 1040 03ba DF93      		push r29
+ 1041               	.LCFI34:
+ 1042               		.cfi_def_cfa_offset 6
+ 1043               		.cfi_offset 29, -5
+ 1044               	/* prologue: function */
+ 1045               	/* frame size = 0 */
+ 1046               	/* stack size = 3 */
+ 1047               	.L__stack_usage = 3
+ 1048 03bc D82F      		mov r29,r24
+ 1049 03be 162F      		mov r17,r22
+ 191:usart.c       ****     if (MDB_USART_TX_READY == 1)
+ 1050               		.loc 1 191 5 is_stmt 1 view .LVU229
+ 1051               		.loc 1 191 8 is_stmt 0 view .LVU230
+ 1052 03c0 4130      		cpi r20,lo8(1)
+ 1053 03c2 01F4      		brne .L49
+ 192:usart.c       ****     {
+ 193:usart.c       **** 
+ 194:usart.c       ****         return write_buffer(usart_number, TX, (uint8_t)(mdb >> 8)) | write_buffer(usart_number, TX,
+ 1054               		.loc 1 194 9 is_stmt 1 view .LVU231
+ 1055               		.loc 1 194 16 is_stmt 0 view .LVU232
+ 1056 03c4 472F      		mov r20,r23
+ 1057               	.LVL69:
+ 1058               		.loc 1 194 16 view .LVU233
+ 1059 03c6 61E0      		ldi r22,lo8(1)
+ 1060               	.LVL70:
+ 1061               		.loc 1 194 16 view .LVU234
+ 1062 03c8 0E94 0000 		call write_buffer
+ 1063               	.LVL71:
+ 1064               		.loc 1 194 16 view .LVU235
+ 1065 03cc C82F      		mov r28,r24
+ 1066               		.loc 1 194 70 view .LVU236
+ 1067 03ce 412F      		mov r20,r17
+ 1068 03d0 61E0      		ldi r22,lo8(1)
+ 1069 03d2 8D2F      		mov r24,r29
+ 1070 03d4 0E94 0000 		call write_buffer
+ 1071               	.LVL72:
+ 1072               		.loc 1 194 68 view .LVU237
+ 1073 03d8 8C2B      		or r24,r28
+ 1074               	.L48:
+ 1075               	/* epilogue start */
+ 195:usart.c       ****     }
+ 196:usart.c       ****     else
+ 197:usart.c       ****     {
+ 198:usart.c       ****         uint8_t m = 0;
+ 199:usart.c       ****     }
+ 200:usart.c       **** }
+ 1076               		.loc 1 200 1 view .LVU238
+ 1077 03da DF91      		pop r29
+ 1078               	.LVL73:
+ 1079               		.loc 1 200 1 view .LVU239
+ 1080 03dc CF91      		pop r28
+ 1081 03de 1F91      		pop r17
+ 1082 03e0 0895      		ret
+ 1083               	.LVL74:
+ 1084               	.L49:
+ 198:usart.c       ****     }
+ 1085               		.loc 1 198 9 is_stmt 1 view .LVU240
+ 1086               	.LVL75:
+ 1087               		.loc 1 200 1 is_stmt 0 view .LVU241
+ 1088 03e2 00C0      		rjmp .L48
+ 1089               		.cfi_endproc
+ 1090               	.LFE10:
+ 1092               	.global	recv_mdb
+ 1094               	recv_mdb:
+ 1095               	.LVL76:
+ 1096               	.LFB11:
+ 201:usart.c       **** 
+ 202:usart.c       **** uint16_t recv_mdb(uint8_t usart_number)
+ 203:usart.c       **** {
+ 1097               		.loc 1 203 1 is_stmt 1 view -0
+ 1098               		.cfi_startproc
+ 1099               		.loc 1 203 1 is_stmt 0 view .LVU243
+ 1100 03e4 1F93      		push r17
+ 1101               	.LCFI35:
+ 1102               		.cfi_def_cfa_offset 4
+ 1103               		.cfi_offset 17, -3
+ 1104 03e6 CF93      		push r28
+ 1105               	.LCFI36:
+ 1106               		.cfi_def_cfa_offset 5
+ 1107               		.cfi_offset 28, -4
+ 1108 03e8 DF93      		push r29
+ 1109               	.LCFI37:
+ 1110               		.cfi_def_cfa_offset 6
+ 1111               		.cfi_offset 29, -5
+ 1112 03ea 0F92      		push __tmp_reg__
+ 1113 03ec 0F92      		push __tmp_reg__
+ 1114               	.LCFI38:
+ 1115               		.cfi_def_cfa_offset 8
+ 1116 03ee CDB7      		in r28,__SP_L__
+ 1117 03f0 DEB7      		in r29,__SP_H__
+ 1118               	.LCFI39:
+ 1119               		.cfi_def_cfa_register 28
+ 1120               	/* prologue: function */
+ 1121               	/* frame size = 2 */
+ 1122               	/* stack size = 5 */
+ 1123               	.L__stack_usage = 5
+ 1124 03f2 182F      		mov r17,r24
+ 204:usart.c       ****     uint8_t hb, lb;
+ 1125               		.loc 1 204 5 is_stmt 1 view .LVU244
+ 205:usart.c       ****     read_buffer(usart_number, RX, &hb);
+ 1126               		.loc 1 205 5 view .LVU245
+ 1127 03f4 AE01      		movw r20,r28
+ 1128 03f6 4E5F      		subi r20,-2
+ 1129 03f8 5F4F      		sbci r21,-1
+ 1130 03fa 60E0      		ldi r22,0
+ 1131 03fc 0E94 0000 		call read_buffer
+ 1132               	.LVL77:
+ 206:usart.c       ****     read_buffer(usart_number, RX, &lb);
+ 1133               		.loc 1 206 5 view .LVU246
+ 1134 0400 AE01      		movw r20,r28
+ 1135 0402 4F5F      		subi r20,-1
+ 1136 0404 5F4F      		sbci r21,-1
+ 1137 0406 60E0      		ldi r22,0
+ 1138 0408 812F      		mov r24,r17
+ 1139 040a 0E94 0000 		call read_buffer
+ 1140               	.LVL78:
+ 207:usart.c       ****     return ((hb << 8) | lb);
+ 1141               		.loc 1 207 5 view .LVU247
+ 1142               		.loc 1 207 17 is_stmt 0 view .LVU248
+ 1143 040e 9A81      		ldd r25,Y+2
+ 1144               		.loc 1 207 23 view .LVU249
+ 1145 0410 8981      		ldd r24,Y+1
+ 1146               	/* epilogue start */
+ 208:usart.c       **** }
+ 1147               		.loc 1 208 1 view .LVU250
+ 1148 0412 0F90      		pop __tmp_reg__
+ 1149 0414 0F90      		pop __tmp_reg__
+ 1150 0416 DF91      		pop r29
+ 1151 0418 CF91      		pop r28
+ 1152 041a 1F91      		pop r17
+ 1153               	.LVL79:
+ 1154               		.loc 1 208 1 view .LVU251
+ 1155 041c 0895      		ret
+ 1156               		.cfi_endproc
+ 1157               	.LFE11:
+ 1159               	.global	__vector_25
+ 1161               	__vector_25:
+ 1162               	.LFB12:
+ 209:usart.c       **** 
+ 210:usart.c       **** 
+ 211:usart.c       **** #if (USART0 == 1)
+ 212:usart.c       **** ISR(USART0_RX_vect)
+ 213:usart.c       **** {
+ 1163               		.loc 1 213 1 is_stmt 1 view -0
+ 1164               		.cfi_startproc
+ 1165 041e 1F92      		push r1
+ 1166               	.LCFI40:
+ 1167               		.cfi_def_cfa_offset 4
+ 1168               		.cfi_offset 1, -3
+ 1169 0420 0F92      		push r0
+ 1170               	.LCFI41:
+ 1171               		.cfi_def_cfa_offset 5
+ 1172               		.cfi_offset 0, -4
+ 1173 0422 0FB6      		in r0,__SREG__
+ 1174 0424 0F92      		push r0
+ 1175 0426 1124      		clr __zero_reg__
+ 1176 0428 0BB6      		in r0,__RAMPZ__
+ 1177 042a 0F92      		push r0
+ 1178 042c 2F93      		push r18
+ 1179               	.LCFI42:
+ 1180               		.cfi_def_cfa_offset 6
+ 1181               		.cfi_offset 18, -5
+ 1182 042e 3F93      		push r19
+ 1183               	.LCFI43:
+ 1184               		.cfi_def_cfa_offset 7
+ 1185               		.cfi_offset 19, -6
+ 1186 0430 4F93      		push r20
+ 1187               	.LCFI44:
+ 1188               		.cfi_def_cfa_offset 8
+ 1189               		.cfi_offset 20, -7
+ 1190 0432 5F93      		push r21
+ 1191               	.LCFI45:
+ 1192               		.cfi_def_cfa_offset 9
+ 1193               		.cfi_offset 21, -8
+ 1194 0434 6F93      		push r22
+ 1195               	.LCFI46:
+ 1196               		.cfi_def_cfa_offset 10
+ 1197               		.cfi_offset 22, -9
+ 1198 0436 7F93      		push r23
+ 1199               	.LCFI47:
+ 1200               		.cfi_def_cfa_offset 11
+ 1201               		.cfi_offset 23, -10
+ 1202 0438 8F93      		push r24
+ 1203               	.LCFI48:
+ 1204               		.cfi_def_cfa_offset 12
+ 1205               		.cfi_offset 24, -11
+ 1206 043a 9F93      		push r25
+ 1207               	.LCFI49:
+ 1208               		.cfi_def_cfa_offset 13
+ 1209               		.cfi_offset 25, -12
+ 1210 043c AF93      		push r26
+ 1211               	.LCFI50:
+ 1212               		.cfi_def_cfa_offset 14
+ 1213               		.cfi_offset 26, -13
+ 1214 043e BF93      		push r27
+ 1215               	.LCFI51:
+ 1216               		.cfi_def_cfa_offset 15
+ 1217               		.cfi_offset 27, -14
+ 1218 0440 EF93      		push r30
+ 1219               	.LCFI52:
+ 1220               		.cfi_def_cfa_offset 16
+ 1221               		.cfi_offset 30, -15
+ 1222 0442 FF93      		push r31
+ 1223               	.LCFI53:
+ 1224               		.cfi_def_cfa_offset 17
+ 1225               		.cfi_offset 31, -16
+ 1226               	/* prologue: Signal */
+ 1227               	/* frame size = 0 */
+ 1228               	/* stack size = 16 */
+ 1229               	.L__stack_usage = 16
+ 214:usart.c       ****     uint8_t data;
+ 1230               		.loc 1 214 5 view .LVU253
+ 215:usart.c       ****     if (UCSR0B & (1 << 2))
+ 1231               		.loc 1 215 5 view .LVU254
+ 1232               		.loc 1 215 9 is_stmt 0 view .LVU255
+ 1233 0444 8091 C100 		lds r24,193
+ 1234               		.loc 1 215 8 view .LVU256
+ 1235 0448 82FF      		sbrs r24,2
+ 1236 044a 00C0      		rjmp .L52
+ 216:usart.c       ****     {
+ 217:usart.c       ****         data = ((UCSR0B >> 1) & 0x01);
+ 1237               		.loc 1 217 9 is_stmt 1 view .LVU257
+ 1238               		.loc 1 217 18 is_stmt 0 view .LVU258
+ 1239 044c 4091 C100 		lds r20,193
+ 1240               	.LVL80:
+ 218:usart.c       ****         write_buffer(0, RX, data);
+ 1241               		.loc 1 218 9 is_stmt 1 view .LVU259
+ 217:usart.c       ****         write_buffer(0, RX, data);
+ 1242               		.loc 1 217 14 is_stmt 0 view .LVU260
+ 1243 0450 4695      		lsr r20
+ 1244 0452 4170      		andi r20,1
+ 1245               	.LVL81:
+ 1246               		.loc 1 218 9 view .LVU261
+ 1247 0454 60E0      		ldi r22,0
+ 1248 0456 80E0      		ldi r24,0
+ 1249 0458 0E94 0000 		call write_buffer
+ 1250               	.LVL82:
+ 1251               	.L52:
+ 219:usart.c       ****     }
+ 220:usart.c       ****     data = UDR0;
+ 1252               		.loc 1 220 5 is_stmt 1 view .LVU262
+ 1253               		.loc 1 220 10 is_stmt 0 view .LVU263
+ 1254 045c 4091 C600 		lds r20,198
+ 1255               	.LVL83:
+ 221:usart.c       ****     write_buffer(0, RX, data);
+ 1256               		.loc 1 221 5 is_stmt 1 view .LVU264
+ 1257 0460 60E0      		ldi r22,0
+ 1258 0462 80E0      		ldi r24,0
+ 1259 0464 0E94 0000 		call write_buffer
+ 1260               	.LVL84:
+ 1261               	/* epilogue start */
+ 222:usart.c       **** }
+ 1262               		.loc 1 222 1 is_stmt 0 view .LVU265
+ 1263 0468 FF91      		pop r31
+ 1264 046a EF91      		pop r30
+ 1265 046c BF91      		pop r27
+ 1266 046e AF91      		pop r26
+ 1267 0470 9F91      		pop r25
+ 1268 0472 8F91      		pop r24
+ 1269 0474 7F91      		pop r23
+ 1270 0476 6F91      		pop r22
+ 1271 0478 5F91      		pop r21
+ 1272 047a 4F91      		pop r20
+ 1273 047c 3F91      		pop r19
+ 1274 047e 2F91      		pop r18
+ 1275 0480 0F90      		pop r0
+ 1276 0482 0BBE      		out __RAMPZ__,r0
+ 1277 0484 0F90      		pop r0
+ 1278 0486 0FBE      		out __SREG__,r0
+ 1279 0488 0F90      		pop r0
+ 1280 048a 1F90      		pop r1
+ 1281 048c 1895      		reti
+ 1282               		.cfi_endproc
+ 1283               	.LFE12:
+ 1285               	.global	__vector_36
+ 1287               	__vector_36:
+ 1288               	.LFB13:
+ 223:usart.c       **** #endif
+ 224:usart.c       **** 
+ 225:usart.c       **** #if (USART1 == 1)
+ 226:usart.c       **** ISR(USART1_RX_vect)
+ 227:usart.c       **** {
+ 1289               		.loc 1 227 1 is_stmt 1 view -0
+ 1290               		.cfi_startproc
+ 1291 048e 1F92      		push r1
+ 1292               	.LCFI54:
+ 1293               		.cfi_def_cfa_offset 4
+ 1294               		.cfi_offset 1, -3
+ 1295 0490 0F92      		push r0
+ 1296               	.LCFI55:
+ 1297               		.cfi_def_cfa_offset 5
+ 1298               		.cfi_offset 0, -4
+ 1299 0492 0FB6      		in r0,__SREG__
+ 1300 0494 0F92      		push r0
+ 1301 0496 1124      		clr __zero_reg__
+ 1302 0498 0BB6      		in r0,__RAMPZ__
+ 1303 049a 0F92      		push r0
+ 1304 049c 2F93      		push r18
+ 1305               	.LCFI56:
+ 1306               		.cfi_def_cfa_offset 6
+ 1307               		.cfi_offset 18, -5
+ 1308 049e 3F93      		push r19
+ 1309               	.LCFI57:
+ 1310               		.cfi_def_cfa_offset 7
+ 1311               		.cfi_offset 19, -6
+ 1312 04a0 4F93      		push r20
+ 1313               	.LCFI58:
+ 1314               		.cfi_def_cfa_offset 8
+ 1315               		.cfi_offset 20, -7
+ 1316 04a2 5F93      		push r21
+ 1317               	.LCFI59:
+ 1318               		.cfi_def_cfa_offset 9
+ 1319               		.cfi_offset 21, -8
+ 1320 04a4 6F93      		push r22
+ 1321               	.LCFI60:
+ 1322               		.cfi_def_cfa_offset 10
+ 1323               		.cfi_offset 22, -9
+ 1324 04a6 7F93      		push r23
+ 1325               	.LCFI61:
+ 1326               		.cfi_def_cfa_offset 11
+ 1327               		.cfi_offset 23, -10
+ 1328 04a8 8F93      		push r24
+ 1329               	.LCFI62:
+ 1330               		.cfi_def_cfa_offset 12
+ 1331               		.cfi_offset 24, -11
+ 1332 04aa 9F93      		push r25
+ 1333               	.LCFI63:
+ 1334               		.cfi_def_cfa_offset 13
+ 1335               		.cfi_offset 25, -12
+ 1336 04ac AF93      		push r26
+ 1337               	.LCFI64:
+ 1338               		.cfi_def_cfa_offset 14
+ 1339               		.cfi_offset 26, -13
+ 1340 04ae BF93      		push r27
+ 1341               	.LCFI65:
+ 1342               		.cfi_def_cfa_offset 15
+ 1343               		.cfi_offset 27, -14
+ 1344 04b0 EF93      		push r30
+ 1345               	.LCFI66:
+ 1346               		.cfi_def_cfa_offset 16
+ 1347               		.cfi_offset 30, -15
+ 1348 04b2 FF93      		push r31
+ 1349               	.LCFI67:
+ 1350               		.cfi_def_cfa_offset 17
+ 1351               		.cfi_offset 31, -16
+ 1352               	/* prologue: Signal */
+ 1353               	/* frame size = 0 */
+ 1354               	/* stack size = 16 */
+ 1355               	.L__stack_usage = 16
+ 228:usart.c       ****     uint8_t data;
+ 1356               		.loc 1 228 5 view .LVU267
+ 229:usart.c       ****     if (UCSR1B & (1 << 2))
+ 1357               		.loc 1 229 5 view .LVU268
+ 1358               		.loc 1 229 9 is_stmt 0 view .LVU269
+ 1359 04b4 8091 C900 		lds r24,201
+ 1360               		.loc 1 229 8 view .LVU270
+ 1361 04b8 82FF      		sbrs r24,2
+ 1362 04ba 00C0      		rjmp .L57
+ 230:usart.c       ****     {
+ 231:usart.c       ****         data = ((UCSR1B >> 1) & 0x01);
+ 1363               		.loc 1 231 9 is_stmt 1 view .LVU271
+ 1364               		.loc 1 231 18 is_stmt 0 view .LVU272
+ 1365 04bc 4091 C900 		lds r20,201
+ 1366               	.LVL85:
+ 232:usart.c       ****         write_buffer(1, RX, data);
+ 1367               		.loc 1 232 9 is_stmt 1 view .LVU273
+ 231:usart.c       ****         write_buffer(1, RX, data);
+ 1368               		.loc 1 231 14 is_stmt 0 view .LVU274
+ 1369 04c0 4695      		lsr r20
+ 1370 04c2 4170      		andi r20,1
+ 1371               	.LVL86:
+ 1372               		.loc 1 232 9 view .LVU275
+ 1373 04c4 60E0      		ldi r22,0
+ 1374 04c6 81E0      		ldi r24,lo8(1)
+ 1375 04c8 0E94 0000 		call write_buffer
+ 1376               	.LVL87:
+ 1377               	.L57:
+ 233:usart.c       ****     }
+ 234:usart.c       ****     data = UDR1;
+ 1378               		.loc 1 234 5 is_stmt 1 view .LVU276
+ 1379               		.loc 1 234 10 is_stmt 0 view .LVU277
+ 1380 04cc 4091 CE00 		lds r20,206
+ 1381               	.LVL88:
+ 235:usart.c       ****     write_buffer(1, RX, data);
+ 1382               		.loc 1 235 5 is_stmt 1 view .LVU278
+ 1383 04d0 60E0      		ldi r22,0
+ 1384 04d2 81E0      		ldi r24,lo8(1)
+ 1385 04d4 0E94 0000 		call write_buffer
+ 1386               	.LVL89:
+ 1387               	/* epilogue start */
+ 236:usart.c       **** }
+ 1388               		.loc 1 236 1 is_stmt 0 view .LVU279
+ 1389 04d8 FF91      		pop r31
+ 1390 04da EF91      		pop r30
+ 1391 04dc BF91      		pop r27
+ 1392 04de AF91      		pop r26
+ 1393 04e0 9F91      		pop r25
+ 1394 04e2 8F91      		pop r24
+ 1395 04e4 7F91      		pop r23
+ 1396 04e6 6F91      		pop r22
+ 1397 04e8 5F91      		pop r21
+ 1398 04ea 4F91      		pop r20
+ 1399 04ec 3F91      		pop r19
+ 1400 04ee 2F91      		pop r18
+ 1401 04f0 0F90      		pop r0
+ 1402 04f2 0BBE      		out __RAMPZ__,r0
+ 1403 04f4 0F90      		pop r0
+ 1404 04f6 0FBE      		out __SREG__,r0
+ 1405 04f8 0F90      		pop r0
+ 1406 04fa 1F90      		pop r1
+ 1407 04fc 1895      		reti
+ 1408               		.cfi_endproc
+ 1409               	.LFE13:
+ 1411               	.global	__vector_51
+ 1413               	__vector_51:
+ 1414               	.LFB14:
+ 237:usart.c       **** #endif
+ 238:usart.c       **** 
+ 239:usart.c       **** #if (USART2 == 1)
+ 240:usart.c       **** ISR(USART2_RX_vect)
+ 241:usart.c       **** {
+ 1415               		.loc 1 241 1 is_stmt 1 view -0
+ 1416               		.cfi_startproc
+ 1417 04fe 1F92      		push r1
+ 1418               	.LCFI68:
+ 1419               		.cfi_def_cfa_offset 4
+ 1420               		.cfi_offset 1, -3
+ 1421 0500 0F92      		push r0
+ 1422               	.LCFI69:
+ 1423               		.cfi_def_cfa_offset 5
+ 1424               		.cfi_offset 0, -4
+ 1425 0502 0FB6      		in r0,__SREG__
+ 1426 0504 0F92      		push r0
+ 1427 0506 1124      		clr __zero_reg__
+ 1428 0508 0BB6      		in r0,__RAMPZ__
+ 1429 050a 0F92      		push r0
+ 1430 050c 2F93      		push r18
+ 1431               	.LCFI70:
+ 1432               		.cfi_def_cfa_offset 6
+ 1433               		.cfi_offset 18, -5
+ 1434 050e 3F93      		push r19
+ 1435               	.LCFI71:
+ 1436               		.cfi_def_cfa_offset 7
+ 1437               		.cfi_offset 19, -6
+ 1438 0510 4F93      		push r20
+ 1439               	.LCFI72:
+ 1440               		.cfi_def_cfa_offset 8
+ 1441               		.cfi_offset 20, -7
+ 1442 0512 5F93      		push r21
+ 1443               	.LCFI73:
+ 1444               		.cfi_def_cfa_offset 9
+ 1445               		.cfi_offset 21, -8
+ 1446 0514 6F93      		push r22
+ 1447               	.LCFI74:
+ 1448               		.cfi_def_cfa_offset 10
+ 1449               		.cfi_offset 22, -9
+ 1450 0516 7F93      		push r23
+ 1451               	.LCFI75:
+ 1452               		.cfi_def_cfa_offset 11
+ 1453               		.cfi_offset 23, -10
+ 1454 0518 8F93      		push r24
+ 1455               	.LCFI76:
+ 1456               		.cfi_def_cfa_offset 12
+ 1457               		.cfi_offset 24, -11
+ 1458 051a 9F93      		push r25
+ 1459               	.LCFI77:
+ 1460               		.cfi_def_cfa_offset 13
+ 1461               		.cfi_offset 25, -12
+ 1462 051c AF93      		push r26
+ 1463               	.LCFI78:
+ 1464               		.cfi_def_cfa_offset 14
+ 1465               		.cfi_offset 26, -13
+ 1466 051e BF93      		push r27
+ 1467               	.LCFI79:
+ 1468               		.cfi_def_cfa_offset 15
+ 1469               		.cfi_offset 27, -14
+ 1470 0520 EF93      		push r30
+ 1471               	.LCFI80:
+ 1472               		.cfi_def_cfa_offset 16
+ 1473               		.cfi_offset 30, -15
+ 1474 0522 FF93      		push r31
+ 1475               	.LCFI81:
+ 1476               		.cfi_def_cfa_offset 17
+ 1477               		.cfi_offset 31, -16
+ 1478               	/* prologue: Signal */
+ 1479               	/* frame size = 0 */
+ 1480               	/* stack size = 16 */
+ 1481               	.L__stack_usage = 16
+ 242:usart.c       ****     uint8_t data;
+ 1482               		.loc 1 242 5 view .LVU281
+ 243:usart.c       ****     if (UCSR2B & (1 << 2))
+ 1483               		.loc 1 243 5 view .LVU282
+ 1484               		.loc 1 243 9 is_stmt 0 view .LVU283
+ 1485 0524 8091 D100 		lds r24,209
+ 1486               		.loc 1 243 8 view .LVU284
+ 1487 0528 82FF      		sbrs r24,2
+ 1488 052a 00C0      		rjmp .L62
+ 244:usart.c       ****     {
+ 245:usart.c       ****         data = ((UCSR2B >> 1) & 0x01);
+ 1489               		.loc 1 245 9 is_stmt 1 view .LVU285
+ 1490               		.loc 1 245 18 is_stmt 0 view .LVU286
+ 1491 052c 4091 D100 		lds r20,209
+ 1492               	.LVL90:
+ 246:usart.c       ****         write_buffer(2, RX, data);
+ 1493               		.loc 1 246 9 is_stmt 1 view .LVU287
+ 245:usart.c       ****         write_buffer(2, RX, data);
+ 1494               		.loc 1 245 14 is_stmt 0 view .LVU288
+ 1495 0530 4695      		lsr r20
+ 1496 0532 4170      		andi r20,1
+ 1497               	.LVL91:
+ 1498               		.loc 1 246 9 view .LVU289
+ 1499 0534 60E0      		ldi r22,0
+ 1500 0536 82E0      		ldi r24,lo8(2)
+ 1501 0538 0E94 0000 		call write_buffer
+ 1502               	.LVL92:
+ 1503               	.L62:
+ 247:usart.c       ****     }
+ 248:usart.c       ****     data = UDR2;
+ 1504               		.loc 1 248 5 is_stmt 1 view .LVU290
+ 1505               		.loc 1 248 10 is_stmt 0 view .LVU291
+ 1506 053c 4091 D600 		lds r20,214
+ 1507               	.LVL93:
+ 249:usart.c       ****     write_buffer(2, RX, data);
+ 1508               		.loc 1 249 5 is_stmt 1 view .LVU292
+ 1509 0540 60E0      		ldi r22,0
+ 1510 0542 82E0      		ldi r24,lo8(2)
+ 1511 0544 0E94 0000 		call write_buffer
+ 1512               	.LVL94:
+ 1513               	/* epilogue start */
+ 250:usart.c       **** }
+ 1514               		.loc 1 250 1 is_stmt 0 view .LVU293
+ 1515 0548 FF91      		pop r31
+ 1516 054a EF91      		pop r30
+ 1517 054c BF91      		pop r27
+ 1518 054e AF91      		pop r26
+ 1519 0550 9F91      		pop r25
+ 1520 0552 8F91      		pop r24
+ 1521 0554 7F91      		pop r23
+ 1522 0556 6F91      		pop r22
+ 1523 0558 5F91      		pop r21
+ 1524 055a 4F91      		pop r20
+ 1525 055c 3F91      		pop r19
+ 1526 055e 2F91      		pop r18
+ 1527 0560 0F90      		pop r0
+ 1528 0562 0BBE      		out __RAMPZ__,r0
+ 1529 0564 0F90      		pop r0
+ 1530 0566 0FBE      		out __SREG__,r0
+ 1531 0568 0F90      		pop r0
+ 1532 056a 1F90      		pop r1
+ 1533 056c 1895      		reti
+ 1534               		.cfi_endproc
+ 1535               	.LFE14:
+ 1537               	.global	__vector_26
+ 1539               	__vector_26:
+ 1540               	.LFB15:
+ 251:usart.c       **** #endif
+ 252:usart.c       **** 
+ 253:usart.c       **** #if (USART3 == 1)
+ 254:usart.c       **** ISR(USART3_RX_vect)
+ 255:usart.c       **** {
+ 256:usart.c       ****     uint8_t data;
+ 257:usart.c       ****     if (UCSR3B & (1 << 2))
+ 258:usart.c       ****     {
+ 259:usart.c       ****         data = ((UCSR3B >> 1) & 0x01);
+ 260:usart.c       ****         write_buffer(3, RX, data);
+ 261:usart.c       ****     }
+ 262:usart.c       ****     data = UDR3;
+ 263:usart.c       ****     write_buffer(3, RX, data);
+ 264:usart.c       **** }
+ 265:usart.c       **** #endif
+ 266:usart.c       **** 
+ 267:usart.c       **** #if (USART0 == 1)
+ 268:usart.c       **** ISR(USART0_UDRE_vect)
+ 269:usart.c       **** {
+ 1541               		.loc 1 269 1 is_stmt 1 view -0
+ 1542               		.cfi_startproc
+ 1543 056e 1F92      		push r1
+ 1544               	.LCFI82:
+ 1545               		.cfi_def_cfa_offset 4
+ 1546               		.cfi_offset 1, -3
+ 1547 0570 0F92      		push r0
+ 1548               	.LCFI83:
+ 1549               		.cfi_def_cfa_offset 5
+ 1550               		.cfi_offset 0, -4
+ 1551 0572 0FB6      		in r0,__SREG__
+ 1552 0574 0F92      		push r0
+ 1553 0576 1124      		clr __zero_reg__
+ 1554 0578 0BB6      		in r0,__RAMPZ__
+ 1555 057a 0F92      		push r0
+ 1556 057c 2F93      		push r18
+ 1557               	.LCFI84:
+ 1558               		.cfi_def_cfa_offset 6
+ 1559               		.cfi_offset 18, -5
+ 1560 057e 3F93      		push r19
+ 1561               	.LCFI85:
+ 1562               		.cfi_def_cfa_offset 7
+ 1563               		.cfi_offset 19, -6
+ 1564 0580 4F93      		push r20
+ 1565               	.LCFI86:
+ 1566               		.cfi_def_cfa_offset 8
+ 1567               		.cfi_offset 20, -7
+ 1568 0582 5F93      		push r21
+ 1569               	.LCFI87:
+ 1570               		.cfi_def_cfa_offset 9
+ 1571               		.cfi_offset 21, -8
+ 1572 0584 6F93      		push r22
+ 1573               	.LCFI88:
+ 1574               		.cfi_def_cfa_offset 10
+ 1575               		.cfi_offset 22, -9
+ 1576 0586 7F93      		push r23
+ 1577               	.LCFI89:
+ 1578               		.cfi_def_cfa_offset 11
+ 1579               		.cfi_offset 23, -10
+ 1580 0588 8F93      		push r24
+ 1581               	.LCFI90:
+ 1582               		.cfi_def_cfa_offset 12
+ 1583               		.cfi_offset 24, -11
+ 1584 058a 9F93      		push r25
+ 1585               	.LCFI91:
+ 1586               		.cfi_def_cfa_offset 13
+ 1587               		.cfi_offset 25, -12
+ 1588 058c AF93      		push r26
+ 1589               	.LCFI92:
+ 1590               		.cfi_def_cfa_offset 14
+ 1591               		.cfi_offset 26, -13
+ 1592 058e BF93      		push r27
+ 1593               	.LCFI93:
+ 1594               		.cfi_def_cfa_offset 15
+ 1595               		.cfi_offset 27, -14
+ 1596 0590 EF93      		push r30
+ 1597               	.LCFI94:
+ 1598               		.cfi_def_cfa_offset 16
+ 1599               		.cfi_offset 30, -15
+ 1600 0592 FF93      		push r31
+ 1601               	.LCFI95:
+ 1602               		.cfi_def_cfa_offset 17
+ 1603               		.cfi_offset 31, -16
+ 1604 0594 CF93      		push r28
+ 1605               	.LCFI96:
+ 1606               		.cfi_def_cfa_offset 18
+ 1607               		.cfi_offset 28, -17
+ 1608 0596 DF93      		push r29
+ 1609               	.LCFI97:
+ 1610               		.cfi_def_cfa_offset 19
+ 1611               		.cfi_offset 29, -18
+ 1612 0598 0F92      		push __tmp_reg__
+ 1613               	.LCFI98:
+ 1614               		.cfi_def_cfa_offset 20
+ 1615 059a CDB7      		in r28,__SP_L__
+ 1616 059c DEB7      		in r29,__SP_H__
+ 1617               	.LCFI99:
+ 1618               		.cfi_def_cfa_register 28
+ 1619               	/* prologue: Signal */
+ 1620               	/* frame size = 1 */
+ 1621               	/* stack size = 19 */
+ 1622               	.L__stack_usage = 19
+ 270:usart.c       ****     uint8_t data;
+ 1623               		.loc 1 270 5 view .LVU295
+ 271:usart.c       ****     if (buffer_level(0, TX) > 0)
+ 1624               		.loc 1 271 5 view .LVU296
+ 1625               	.LVL95:
+ 1626               	.LBB9:
+ 1627               	.LBI9:
+  92:usart.c       **** {
+ 1628               		.loc 1 92 9 view .LVU297
+ 1629               	.LBB10:
+  94:usart.c       **** }
+ 1630               		.loc 1 94 5 view .LVU298
+  94:usart.c       **** }
+ 1631               		.loc 1 94 49 is_stmt 0 view .LVU299
+ 1632 059e 9091 0000 		lds r25,usart+259
+  94:usart.c       **** }
+ 1633               		.loc 1 94 95 view .LVU300
+ 1634 05a2 8091 0000 		lds r24,usart+258
+ 1635               	.LVL96:
+  94:usart.c       **** }
+ 1636               		.loc 1 94 95 view .LVU301
+ 1637               	.LBE10:
+ 1638               	.LBE9:
+ 1639               		.loc 1 271 8 view .LVU302
+ 1640 05a6 9817      		cp r25,r24
+ 1641 05a8 01F0      		breq .L67
+ 272:usart.c       ****     {
+ 273:usart.c       ****         /* check if usart is in 9-bit mode */
+ 274:usart.c       ****         if (UCSR0B & (1 << 2))
+ 1642               		.loc 1 274 9 is_stmt 1 view .LVU303
+ 1643               		.loc 1 274 13 is_stmt 0 view .LVU304
+ 1644 05aa 8091 C100 		lds r24,193
+ 1645               		.loc 1 274 12 view .LVU305
+ 1646 05ae 82FF      		sbrs r24,2
+ 1647 05b0 00C0      		rjmp .L68
+ 275:usart.c       ****         {
+ 276:usart.c       ****             read_buffer(0, TX, &data);
+ 1648               		.loc 1 276 13 is_stmt 1 view .LVU306
+ 1649 05b2 AE01      		movw r20,r28
+ 1650 05b4 4F5F      		subi r20,-1
+ 1651 05b6 5F4F      		sbci r21,-1
+ 1652 05b8 61E0      		ldi r22,lo8(1)
+ 1653 05ba 80E0      		ldi r24,0
+ 1654 05bc 0E94 0000 		call read_buffer
+ 1655               	.LVL97:
+ 277:usart.c       ****             if (data & 0x01)
+ 1656               		.loc 1 277 13 view .LVU307
+ 1657               		.loc 1 277 16 is_stmt 0 view .LVU308
+ 1658 05c0 8981      		ldd r24,Y+1
+ 1659 05c2 80FF      		sbrs r24,0
+ 1660 05c4 00C0      		rjmp .L69
+ 278:usart.c       ****                 UCSR0B |= (1 << TXB80);
+ 1661               		.loc 1 278 17 is_stmt 1 view .LVU309
+ 1662               		.loc 1 278 24 is_stmt 0 view .LVU310
+ 1663 05c6 8091 C100 		lds r24,193
+ 1664 05ca 8160      		ori r24,lo8(1)
+ 1665               	.L74:
+ 279:usart.c       ****             else
+ 280:usart.c       ****                 UCSR0B &= ~(1 << TXB80);
+ 1666               		.loc 1 280 24 view .LVU311
+ 1667 05cc 8093 C100 		sts 193,r24
+ 1668               	.L68:
+ 281:usart.c       ****         }
+ 282:usart.c       ****         read_buffer(0, TX, &data);
+ 1669               		.loc 1 282 9 is_stmt 1 view .LVU312
+ 1670 05d0 AE01      		movw r20,r28
+ 1671 05d2 4F5F      		subi r20,-1
+ 1672 05d4 5F4F      		sbci r21,-1
+ 1673 05d6 61E0      		ldi r22,lo8(1)
+ 1674 05d8 80E0      		ldi r24,0
+ 1675 05da 0E94 0000 		call read_buffer
+ 1676               	.LVL98:
+ 283:usart.c       ****         UDR0 = data;
+ 1677               		.loc 1 283 9 view .LVU313
+ 1678               		.loc 1 283 14 is_stmt 0 view .LVU314
+ 1679 05de 8981      		ldd r24,Y+1
+ 1680 05e0 8093 C600 		sts 198,r24
+ 284:usart.c       ****         return;
+ 1681               		.loc 1 284 9 is_stmt 1 view .LVU315
+ 1682               	.L66:
+ 1683               	/* epilogue start */
+ 285:usart.c       ****     }
+ 286:usart.c       ****     UCSR0B &= ~(1 << UDRIE0);
+ 287:usart.c       **** }
+ 1684               		.loc 1 287 1 is_stmt 0 view .LVU316
+ 1685 05e4 0F90      		pop __tmp_reg__
+ 1686 05e6 DF91      		pop r29
+ 1687 05e8 CF91      		pop r28
+ 1688 05ea FF91      		pop r31
+ 1689 05ec EF91      		pop r30
+ 1690 05ee BF91      		pop r27
+ 1691 05f0 AF91      		pop r26
+ 1692 05f2 9F91      		pop r25
+ 1693 05f4 8F91      		pop r24
+ 1694 05f6 7F91      		pop r23
+ 1695 05f8 6F91      		pop r22
+ 1696 05fa 5F91      		pop r21
+ 1697 05fc 4F91      		pop r20
+ 1698 05fe 3F91      		pop r19
+ 1699 0600 2F91      		pop r18
+ 1700 0602 0F90      		pop r0
+ 1701 0604 0BBE      		out __RAMPZ__,r0
+ 1702 0606 0F90      		pop r0
+ 1703 0608 0FBE      		out __SREG__,r0
+ 1704 060a 0F90      		pop r0
+ 1705 060c 1F90      		pop r1
+ 1706 060e 1895      		reti
+ 1707               	.L69:
+ 280:usart.c       ****         }
+ 1708               		.loc 1 280 17 is_stmt 1 view .LVU317
+ 280:usart.c       ****         }
+ 1709               		.loc 1 280 24 is_stmt 0 view .LVU318
+ 1710 0610 8091 C100 		lds r24,193
+ 1711 0614 8E7F      		andi r24,lo8(-2)
+ 1712 0616 00C0      		rjmp .L74
+ 1713               	.L67:
+ 286:usart.c       **** }
+ 1714               		.loc 1 286 5 is_stmt 1 view .LVU319
+ 286:usart.c       **** }
+ 1715               		.loc 1 286 12 is_stmt 0 view .LVU320
+ 1716 0618 8091 C100 		lds r24,193
+ 1717 061c 8F7D      		andi r24,lo8(-33)
+ 1718 061e 8093 C100 		sts 193,r24
+ 1719 0622 00C0      		rjmp .L66
+ 1720               		.cfi_endproc
+ 1721               	.LFE15:
+ 1723               	.global	__vector_37
+ 1725               	__vector_37:
+ 1726               	.LFB16:
+ 288:usart.c       **** #endif
+ 289:usart.c       **** 
+ 290:usart.c       **** #if (USART1 == 1)
+ 291:usart.c       **** ISR(USART1_UDRE_vect)
+ 292:usart.c       **** {
+ 1727               		.loc 1 292 1 is_stmt 1 view -0
+ 1728               		.cfi_startproc
+ 1729 0624 1F92      		push r1
+ 1730               	.LCFI100:
+ 1731               		.cfi_def_cfa_offset 4
+ 1732               		.cfi_offset 1, -3
+ 1733 0626 0F92      		push r0
+ 1734               	.LCFI101:
+ 1735               		.cfi_def_cfa_offset 5
+ 1736               		.cfi_offset 0, -4
+ 1737 0628 0FB6      		in r0,__SREG__
+ 1738 062a 0F92      		push r0
+ 1739 062c 1124      		clr __zero_reg__
+ 1740 062e 0BB6      		in r0,__RAMPZ__
+ 1741 0630 0F92      		push r0
+ 1742 0632 2F93      		push r18
+ 1743               	.LCFI102:
+ 1744               		.cfi_def_cfa_offset 6
+ 1745               		.cfi_offset 18, -5
+ 1746 0634 3F93      		push r19
+ 1747               	.LCFI103:
+ 1748               		.cfi_def_cfa_offset 7
+ 1749               		.cfi_offset 19, -6
+ 1750 0636 4F93      		push r20
+ 1751               	.LCFI104:
+ 1752               		.cfi_def_cfa_offset 8
+ 1753               		.cfi_offset 20, -7
+ 1754 0638 5F93      		push r21
+ 1755               	.LCFI105:
+ 1756               		.cfi_def_cfa_offset 9
+ 1757               		.cfi_offset 21, -8
+ 1758 063a 6F93      		push r22
+ 1759               	.LCFI106:
+ 1760               		.cfi_def_cfa_offset 10
+ 1761               		.cfi_offset 22, -9
+ 1762 063c 7F93      		push r23
+ 1763               	.LCFI107:
+ 1764               		.cfi_def_cfa_offset 11
+ 1765               		.cfi_offset 23, -10
+ 1766 063e 8F93      		push r24
+ 1767               	.LCFI108:
+ 1768               		.cfi_def_cfa_offset 12
+ 1769               		.cfi_offset 24, -11
+ 1770 0640 9F93      		push r25
+ 1771               	.LCFI109:
+ 1772               		.cfi_def_cfa_offset 13
+ 1773               		.cfi_offset 25, -12
+ 1774 0642 AF93      		push r26
+ 1775               	.LCFI110:
+ 1776               		.cfi_def_cfa_offset 14
+ 1777               		.cfi_offset 26, -13
+ 1778 0644 BF93      		push r27
+ 1779               	.LCFI111:
+ 1780               		.cfi_def_cfa_offset 15
+ 1781               		.cfi_offset 27, -14
+ 1782 0646 EF93      		push r30
+ 1783               	.LCFI112:
+ 1784               		.cfi_def_cfa_offset 16
+ 1785               		.cfi_offset 30, -15
+ 1786 0648 FF93      		push r31
+ 1787               	.LCFI113:
+ 1788               		.cfi_def_cfa_offset 17
+ 1789               		.cfi_offset 31, -16
+ 1790 064a CF93      		push r28
+ 1791               	.LCFI114:
+ 1792               		.cfi_def_cfa_offset 18
+ 1793               		.cfi_offset 28, -17
+ 1794 064c DF93      		push r29
+ 1795               	.LCFI115:
+ 1796               		.cfi_def_cfa_offset 19
+ 1797               		.cfi_offset 29, -18
+ 1798 064e 0F92      		push __tmp_reg__
+ 1799               	.LCFI116:
+ 1800               		.cfi_def_cfa_offset 20
+ 1801 0650 CDB7      		in r28,__SP_L__
+ 1802 0652 DEB7      		in r29,__SP_H__
+ 1803               	.LCFI117:
+ 1804               		.cfi_def_cfa_register 28
+ 1805               	/* prologue: Signal */
+ 1806               	/* frame size = 1 */
+ 1807               	/* stack size = 19 */
+ 1808               	.L__stack_usage = 19
+ 293:usart.c       ****     uint8_t data;
+ 1809               		.loc 1 293 5 view .LVU322
+ 294:usart.c       ****     if (buffer_level(1, TX) > 0)
+ 1810               		.loc 1 294 5 view .LVU323
+ 1811               	.LVL99:
+ 1812               	.LBB11:
+ 1813               	.LBI11:
+  92:usart.c       **** {
+ 1814               		.loc 1 92 9 view .LVU324
+ 1815               	.LBB12:
+  94:usart.c       **** }
+ 1816               		.loc 1 94 5 view .LVU325
+  94:usart.c       **** }
+ 1817               		.loc 1 94 49 is_stmt 0 view .LVU326
+ 1818 0654 9091 0000 		lds r25,usart+527
+  94:usart.c       **** }
+ 1819               		.loc 1 94 95 view .LVU327
+ 1820 0658 8091 0000 		lds r24,usart+526
+ 1821               	.LVL100:
+  94:usart.c       **** }
+ 1822               		.loc 1 94 95 view .LVU328
+ 1823               	.LBE12:
+ 1824               	.LBE11:
+ 1825               		.loc 1 294 8 view .LVU329
+ 1826 065c 9817      		cp r25,r24
+ 1827 065e 01F0      		breq .L76
+ 295:usart.c       ****     {
+ 296:usart.c       ****         /* check if usart is in 9-bit mode */
+ 297:usart.c       ****         if (UCSR1B & (1 << 2))
+ 1828               		.loc 1 297 9 is_stmt 1 view .LVU330
+ 1829               		.loc 1 297 13 is_stmt 0 view .LVU331
+ 1830 0660 8091 C900 		lds r24,201
+ 1831               		.loc 1 297 12 view .LVU332
+ 1832 0664 82FF      		sbrs r24,2
+ 1833 0666 00C0      		rjmp .L77
+ 298:usart.c       ****         {
+ 299:usart.c       **** 
+ 300:usart.c       ****             read_buffer(1, TX, &data);
+ 1834               		.loc 1 300 13 is_stmt 1 view .LVU333
+ 1835 0668 AE01      		movw r20,r28
+ 1836 066a 4F5F      		subi r20,-1
+ 1837 066c 5F4F      		sbci r21,-1
+ 1838 066e 61E0      		ldi r22,lo8(1)
+ 1839 0670 81E0      		ldi r24,lo8(1)
+ 1840 0672 0E94 0000 		call read_buffer
+ 1841               	.LVL101:
+ 301:usart.c       ****             if (data & 0x01)
+ 1842               		.loc 1 301 13 view .LVU334
+ 1843               		.loc 1 301 16 is_stmt 0 view .LVU335
+ 1844 0676 8981      		ldd r24,Y+1
+ 1845 0678 80FF      		sbrs r24,0
+ 1846 067a 00C0      		rjmp .L78
+ 302:usart.c       ****                 UCSR1B |= (1 << TXB81);
+ 1847               		.loc 1 302 17 is_stmt 1 view .LVU336
+ 1848               		.loc 1 302 24 is_stmt 0 view .LVU337
+ 1849 067c 8091 C900 		lds r24,201
+ 1850 0680 8160      		ori r24,lo8(1)
+ 1851               	.L83:
+ 303:usart.c       ****             else
+ 304:usart.c       ****                 UCSR1B &= ~(1 << TXB81);
+ 1852               		.loc 1 304 24 view .LVU338
+ 1853 0682 8093 C900 		sts 201,r24
+ 1854               	.L77:
+ 305:usart.c       ****         }
+ 306:usart.c       ****         read_buffer(1, TX, &data);
+ 1855               		.loc 1 306 9 is_stmt 1 view .LVU339
+ 1856 0686 AE01      		movw r20,r28
+ 1857 0688 4F5F      		subi r20,-1
+ 1858 068a 5F4F      		sbci r21,-1
+ 1859 068c 61E0      		ldi r22,lo8(1)
+ 1860 068e 81E0      		ldi r24,lo8(1)
+ 1861 0690 0E94 0000 		call read_buffer
+ 1862               	.LVL102:
+ 307:usart.c       ****         UDR1 = data;
+ 1863               		.loc 1 307 9 view .LVU340
+ 1864               		.loc 1 307 14 is_stmt 0 view .LVU341
+ 1865 0694 8981      		ldd r24,Y+1
+ 1866 0696 8093 CE00 		sts 206,r24
+ 308:usart.c       ****         return;
+ 1867               		.loc 1 308 9 is_stmt 1 view .LVU342
+ 1868               	.L75:
+ 1869               	/* epilogue start */
+ 309:usart.c       ****     }
+ 310:usart.c       ****     UCSR1B &= ~(1 << UDRIE1);
+ 311:usart.c       **** }
+ 1870               		.loc 1 311 1 is_stmt 0 view .LVU343
+ 1871 069a 0F90      		pop __tmp_reg__
+ 1872 069c DF91      		pop r29
+ 1873 069e CF91      		pop r28
+ 1874 06a0 FF91      		pop r31
+ 1875 06a2 EF91      		pop r30
+ 1876 06a4 BF91      		pop r27
+ 1877 06a6 AF91      		pop r26
+ 1878 06a8 9F91      		pop r25
+ 1879 06aa 8F91      		pop r24
+ 1880 06ac 7F91      		pop r23
+ 1881 06ae 6F91      		pop r22
+ 1882 06b0 5F91      		pop r21
+ 1883 06b2 4F91      		pop r20
+ 1884 06b4 3F91      		pop r19
+ 1885 06b6 2F91      		pop r18
+ 1886 06b8 0F90      		pop r0
+ 1887 06ba 0BBE      		out __RAMPZ__,r0
+ 1888 06bc 0F90      		pop r0
+ 1889 06be 0FBE      		out __SREG__,r0
+ 1890 06c0 0F90      		pop r0
+ 1891 06c2 1F90      		pop r1
+ 1892 06c4 1895      		reti
+ 1893               	.L78:
+ 304:usart.c       ****         }
+ 1894               		.loc 1 304 17 is_stmt 1 view .LVU344
+ 304:usart.c       ****         }
+ 1895               		.loc 1 304 24 is_stmt 0 view .LVU345
+ 1896 06c6 8091 C900 		lds r24,201
+ 1897 06ca 8E7F      		andi r24,lo8(-2)
+ 1898 06cc 00C0      		rjmp .L83
+ 1899               	.L76:
+ 310:usart.c       **** }
+ 1900               		.loc 1 310 5 is_stmt 1 view .LVU346
+ 310:usart.c       **** }
+ 1901               		.loc 1 310 12 is_stmt 0 view .LVU347
+ 1902 06ce 8091 C900 		lds r24,201
+ 1903 06d2 8F7D      		andi r24,lo8(-33)
+ 1904 06d4 8093 C900 		sts 201,r24
+ 1905 06d8 00C0      		rjmp .L75
+ 1906               		.cfi_endproc
+ 1907               	.LFE16:
+ 1909               	.global	__vector_52
+ 1911               	__vector_52:
+ 1912               	.LFB17:
+ 312:usart.c       **** #endif
+ 313:usart.c       **** 
+ 314:usart.c       **** #if (USART2 == 1)
+ 315:usart.c       **** ISR(USART2_UDRE_vect)
+ 316:usart.c       **** {
+ 1913               		.loc 1 316 1 is_stmt 1 view -0
+ 1914               		.cfi_startproc
+ 1915 06da 1F92      		push r1
+ 1916               	.LCFI118:
+ 1917               		.cfi_def_cfa_offset 4
+ 1918               		.cfi_offset 1, -3
+ 1919 06dc 0F92      		push r0
+ 1920               	.LCFI119:
+ 1921               		.cfi_def_cfa_offset 5
+ 1922               		.cfi_offset 0, -4
+ 1923 06de 0FB6      		in r0,__SREG__
+ 1924 06e0 0F92      		push r0
+ 1925 06e2 1124      		clr __zero_reg__
+ 1926 06e4 0BB6      		in r0,__RAMPZ__
+ 1927 06e6 0F92      		push r0
+ 1928 06e8 2F93      		push r18
+ 1929               	.LCFI120:
+ 1930               		.cfi_def_cfa_offset 6
+ 1931               		.cfi_offset 18, -5
+ 1932 06ea 3F93      		push r19
+ 1933               	.LCFI121:
+ 1934               		.cfi_def_cfa_offset 7
+ 1935               		.cfi_offset 19, -6
+ 1936 06ec 4F93      		push r20
+ 1937               	.LCFI122:
+ 1938               		.cfi_def_cfa_offset 8
+ 1939               		.cfi_offset 20, -7
+ 1940 06ee 5F93      		push r21
+ 1941               	.LCFI123:
+ 1942               		.cfi_def_cfa_offset 9
+ 1943               		.cfi_offset 21, -8
+ 1944 06f0 6F93      		push r22
+ 1945               	.LCFI124:
+ 1946               		.cfi_def_cfa_offset 10
+ 1947               		.cfi_offset 22, -9
+ 1948 06f2 7F93      		push r23
+ 1949               	.LCFI125:
+ 1950               		.cfi_def_cfa_offset 11
+ 1951               		.cfi_offset 23, -10
+ 1952 06f4 8F93      		push r24
+ 1953               	.LCFI126:
+ 1954               		.cfi_def_cfa_offset 12
+ 1955               		.cfi_offset 24, -11
+ 1956 06f6 9F93      		push r25
+ 1957               	.LCFI127:
+ 1958               		.cfi_def_cfa_offset 13
+ 1959               		.cfi_offset 25, -12
+ 1960 06f8 AF93      		push r26
+ 1961               	.LCFI128:
+ 1962               		.cfi_def_cfa_offset 14
+ 1963               		.cfi_offset 26, -13
+ 1964 06fa BF93      		push r27
+ 1965               	.LCFI129:
+ 1966               		.cfi_def_cfa_offset 15
+ 1967               		.cfi_offset 27, -14
+ 1968 06fc EF93      		push r30
+ 1969               	.LCFI130:
+ 1970               		.cfi_def_cfa_offset 16
+ 1971               		.cfi_offset 30, -15
+ 1972 06fe FF93      		push r31
+ 1973               	.LCFI131:
+ 1974               		.cfi_def_cfa_offset 17
+ 1975               		.cfi_offset 31, -16
+ 1976 0700 CF93      		push r28
+ 1977               	.LCFI132:
+ 1978               		.cfi_def_cfa_offset 18
+ 1979               		.cfi_offset 28, -17
+ 1980 0702 DF93      		push r29
+ 1981               	.LCFI133:
+ 1982               		.cfi_def_cfa_offset 19
+ 1983               		.cfi_offset 29, -18
+ 1984 0704 0F92      		push __tmp_reg__
+ 1985               	.LCFI134:
+ 1986               		.cfi_def_cfa_offset 20
+ 1987 0706 CDB7      		in r28,__SP_L__
+ 1988 0708 DEB7      		in r29,__SP_H__
+ 1989               	.LCFI135:
+ 1990               		.cfi_def_cfa_register 28
+ 1991               	/* prologue: Signal */
+ 1992               	/* frame size = 1 */
+ 1993               	/* stack size = 19 */
+ 1994               	.L__stack_usage = 19
+ 317:usart.c       ****     uint8_t data;
+ 1995               		.loc 1 317 5 view .LVU349
+ 318:usart.c       ****     if (buffer_level(2, TX) > 0)
+ 1996               		.loc 1 318 5 view .LVU350
+ 1997               	.LVL103:
+ 1998               	.LBB13:
+ 1999               	.LBI13:
+  92:usart.c       **** {
+ 2000               		.loc 1 92 9 view .LVU351
+ 2001               	.LBB14:
+  94:usart.c       **** }
+ 2002               		.loc 1 94 5 view .LVU352
+  94:usart.c       **** }
+ 2003               		.loc 1 94 49 is_stmt 0 view .LVU353
+ 2004 070a 9091 0000 		lds r25,usart+795
+  94:usart.c       **** }
+ 2005               		.loc 1 94 95 view .LVU354
+ 2006 070e 8091 0000 		lds r24,usart+794
+ 2007               	.LVL104:
+  94:usart.c       **** }
+ 2008               		.loc 1 94 95 view .LVU355
+ 2009               	.LBE14:
+ 2010               	.LBE13:
+ 2011               		.loc 1 318 8 view .LVU356
+ 2012 0712 9817      		cp r25,r24
+ 2013 0714 01F0      		breq .L85
+ 319:usart.c       ****     {
+ 320:usart.c       ****         /* check if usart is in 9-bit mode */
+ 321:usart.c       ****         if (UCSR2B & (1 << 2))
+ 2014               		.loc 1 321 9 is_stmt 1 view .LVU357
+ 2015               		.loc 1 321 13 is_stmt 0 view .LVU358
+ 2016 0716 8091 D100 		lds r24,209
+ 2017               		.loc 1 321 12 view .LVU359
+ 2018 071a 82FF      		sbrs r24,2
+ 2019 071c 00C0      		rjmp .L86
+ 322:usart.c       ****         {
+ 323:usart.c       ****             read_buffer(2, TX, &data);
+ 2020               		.loc 1 323 13 is_stmt 1 view .LVU360
+ 2021 071e AE01      		movw r20,r28
+ 2022 0720 4F5F      		subi r20,-1
+ 2023 0722 5F4F      		sbci r21,-1
+ 2024 0724 61E0      		ldi r22,lo8(1)
+ 2025 0726 82E0      		ldi r24,lo8(2)
+ 2026 0728 0E94 0000 		call read_buffer
+ 2027               	.LVL105:
+ 324:usart.c       ****             if (data & 0x01)
+ 2028               		.loc 1 324 13 view .LVU361
+ 2029               		.loc 1 324 16 is_stmt 0 view .LVU362
+ 2030 072c 8981      		ldd r24,Y+1
+ 2031 072e 80FF      		sbrs r24,0
+ 2032 0730 00C0      		rjmp .L87
+ 325:usart.c       ****                 UCSR2B |= (1 << TXB82);
+ 2033               		.loc 1 325 17 is_stmt 1 view .LVU363
+ 2034               		.loc 1 325 24 is_stmt 0 view .LVU364
+ 2035 0732 8091 D100 		lds r24,209
+ 2036 0736 8160      		ori r24,lo8(1)
+ 2037               	.L92:
+ 326:usart.c       ****             else
+ 327:usart.c       ****                 UCSR2B &= ~(1 << TXB82);
+ 2038               		.loc 1 327 24 view .LVU365
+ 2039 0738 8093 D100 		sts 209,r24
+ 2040               	.L86:
+ 328:usart.c       ****         }
+ 329:usart.c       ****         read_buffer(2, TX, &data);
+ 2041               		.loc 1 329 9 is_stmt 1 view .LVU366
+ 2042 073c AE01      		movw r20,r28
+ 2043 073e 4F5F      		subi r20,-1
+ 2044 0740 5F4F      		sbci r21,-1
+ 2045 0742 61E0      		ldi r22,lo8(1)
+ 2046 0744 82E0      		ldi r24,lo8(2)
+ 2047 0746 0E94 0000 		call read_buffer
+ 2048               	.LVL106:
+ 330:usart.c       ****         UDR2 = data;
+ 2049               		.loc 1 330 9 view .LVU367
+ 2050               		.loc 1 330 14 is_stmt 0 view .LVU368
+ 2051 074a 8981      		ldd r24,Y+1
+ 2052 074c 8093 D600 		sts 214,r24
+ 331:usart.c       ****         return;
+ 2053               		.loc 1 331 9 is_stmt 1 view .LVU369
+ 2054               	.L84:
+ 2055               	/* epilogue start */
+ 332:usart.c       ****     }
+ 333:usart.c       ****     UCSR2B &= ~(1 << UDRIE2);
+ 334:usart.c       **** }
+ 2056               		.loc 1 334 1 is_stmt 0 view .LVU370
+ 2057 0750 0F90      		pop __tmp_reg__
+ 2058 0752 DF91      		pop r29
+ 2059 0754 CF91      		pop r28
+ 2060 0756 FF91      		pop r31
+ 2061 0758 EF91      		pop r30
+ 2062 075a BF91      		pop r27
+ 2063 075c AF91      		pop r26
+ 2064 075e 9F91      		pop r25
+ 2065 0760 8F91      		pop r24
+ 2066 0762 7F91      		pop r23
+ 2067 0764 6F91      		pop r22
+ 2068 0766 5F91      		pop r21
+ 2069 0768 4F91      		pop r20
+ 2070 076a 3F91      		pop r19
+ 2071 076c 2F91      		pop r18
+ 2072 076e 0F90      		pop r0
+ 2073 0770 0BBE      		out __RAMPZ__,r0
+ 2074 0772 0F90      		pop r0
+ 2075 0774 0FBE      		out __SREG__,r0
+ 2076 0776 0F90      		pop r0
+ 2077 0778 1F90      		pop r1
+ 2078 077a 1895      		reti
+ 2079               	.L87:
+ 327:usart.c       ****         }
+ 2080               		.loc 1 327 17 is_stmt 1 view .LVU371
+ 327:usart.c       ****         }
+ 2081               		.loc 1 327 24 is_stmt 0 view .LVU372
+ 2082 077c 8091 D100 		lds r24,209
+ 2083 0780 8E7F      		andi r24,lo8(-2)
+ 2084 0782 00C0      		rjmp .L92
+ 2085               	.L85:
+ 333:usart.c       **** }
+ 2086               		.loc 1 333 5 is_stmt 1 view .LVU373
+ 333:usart.c       **** }
+ 2087               		.loc 1 333 12 is_stmt 0 view .LVU374
+ 2088 0784 8091 D100 		lds r24,209
+ 2089 0788 8F7D      		andi r24,lo8(-33)
+ 2090 078a 8093 D100 		sts 209,r24
+ 2091 078e 00C0      		rjmp .L84
+ 2092               		.cfi_endproc
+ 2093               	.LFE17:
+ 2095               	.global	usart
+ 2096               		.data
+ 2099               	usart:
+ 2100 0000 00        		.string	""
+ 2101 0001 0000 0000 		.zero	127
+ 2101      0000 0000 
+ 2101      0000 0000 
+ 2101      0000 0000 
+ 2101      0000 0000 
+ 2102 0080 00        		.byte	0
+ 2103 0081 00        		.byte	0
+ 2104 0082 00        		.string	""
+ 2105 0083 0000 0000 		.zero	127
+ 2105      0000 0000 
+ 2105      0000 0000 
+ 2105      0000 0000 
+ 2105      0000 0000 
+ 2106 0102 00        		.byte	0
+ 2107 0103 00        		.byte	0
+ 2108 0104 C500      		.word	197
+ 2109 0106 C400      		.word	196
+ 2110 0108 C100      		.word	193
+ 2111 010a C200      		.word	194
+ 2112 010c 00        		.string	""
+ 2113 010d 0000 0000 		.zero	127
+ 2113      0000 0000 
+ 2113      0000 0000 
+ 2113      0000 0000 
+ 2113      0000 0000 
+ 2114 018c 00        		.byte	0
+ 2115 018d 00        		.byte	0
+ 2116 018e 00        		.string	""
+ 2117 018f 0000 0000 		.zero	127
+ 2117      0000 0000 
+ 2117      0000 0000 
+ 2117      0000 0000 
+ 2117      0000 0000 
+ 2118 020e 00        		.byte	0
+ 2119 020f 00        		.byte	0
+ 2120 0210 CD00      		.word	205
+ 2121 0212 CC00      		.word	204
+ 2122 0214 C900      		.word	201
+ 2123 0216 CA00      		.word	202
+ 2124 0218 00        		.string	""
+ 2125 0219 0000 0000 		.zero	127
+ 2125      0000 0000 
+ 2125      0000 0000 
+ 2125      0000 0000 
+ 2125      0000 0000 
+ 2126 0298 00        		.byte	0
+ 2127 0299 00        		.byte	0
+ 2128 029a 00        		.string	""
+ 2129 029b 0000 0000 		.zero	127
+ 2129      0000 0000 
+ 2129      0000 0000 
+ 2129      0000 0000 
+ 2129      0000 0000 
+ 2130 031a 00        		.byte	0
+ 2131 031b 00        		.byte	0
+ 2132 031c D500      		.word	213
+ 2133 031e D400      		.word	212
+ 2134 0320 D100      		.word	209
+ 2135 0322 D200      		.word	210
+ 2136               		.text
+ 2137               	.Letext0:
+ 2138               		.file 2 "/usr/avr/include/stdint.h"
+ 2139               		.file 3 "usart.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 usart.c
+     /tmp/cc1Vrdur.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cc1Vrdur.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cc1Vrdur.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cc1Vrdur.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/cc1Vrdur.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cc1Vrdur.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cc1Vrdur.s:13     .text:0000000000000000 setup_usart
+     /tmp/cc1Vrdur.s:2099   .data:0000000000000000 usart
+     /tmp/cc1Vrdur.s:456    .text:00000000000001f8 buffer_level
+     /tmp/cc1Vrdur.s:499    .text:0000000000000224 read_buffer
+     /tmp/cc1Vrdur.s:603    .text:0000000000000286 write_buffer
+     /tmp/cc1Vrdur.s:739    .text:000000000000030e send_char
+     /tmp/cc1Vrdur.s:763    .text:0000000000000316 recv_char
+     /tmp/cc1Vrdur.s:787    .text:000000000000031e send_str
+     /tmp/cc1Vrdur.s:850    .text:0000000000000346 recv_str
+     /tmp/cc1Vrdur.s:940    .text:0000000000000388 send_str_p
+     /tmp/cc1Vrdur.s:1026   .text:00000000000003b6 send_mdb
+     /tmp/cc1Vrdur.s:1094   .text:00000000000003e4 recv_mdb
+     /tmp/cc1Vrdur.s:1161   .text:000000000000041e __vector_25
+     /tmp/cc1Vrdur.s:1287   .text:000000000000048e __vector_36
+     /tmp/cc1Vrdur.s:1413   .text:00000000000004fe __vector_51
+     /tmp/cc1Vrdur.s:1539   .text:000000000000056e __vector_26
+     /tmp/cc1Vrdur.s:1725   .text:0000000000000624 __vector_37
+     /tmp/cc1Vrdur.s:1911   .text:00000000000006da __vector_52
+
+UNDEFINED SYMBOLS
+__udivmodsi4
+__do_copy_data

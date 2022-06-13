@@ -1,0 +1,192 @@
+   1               		.file	"txSwitch.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	setupTxSwitch
+  13               	setupTxSwitch:
+  14               	.LVL0:
+  15               	.LFB6:
+  16               		.file 1 "txSwitch.c"
+   1:txSwitch.c    **** 
+   2:txSwitch.c    **** 
+   3:txSwitch.c    **** #include "txSwitch.h"
+   4:txSwitch.c    **** 
+   5:txSwitch.c    **** void setupTxSwitch(uint8_t pin)
+   6:txSwitch.c    **** 
+   7:txSwitch.c    **** {
+  17               		.loc 1 7 1 view -0
+  18               		.cfi_startproc
+  19               	/* prologue: function */
+  20               	/* frame size = 0 */
+  21               	/* stack size = 0 */
+  22               	.L__stack_usage = 0
+   8:txSwitch.c    ****   // DDRB = 0b01000000;
+   9:txSwitch.c    ****   if (pin == PIN12)
+  23               		.loc 1 9 3 view .LVU1
+  24               		.loc 1 9 6 is_stmt 0 view .LVU2
+  25 0000 8C30      		cpi r24,lo8(12)
+  26 0002 01F4      		brne .L2
+  10:txSwitch.c    ****   {
+  11:txSwitch.c    ****     DDRB = 0xFF;
+  27               		.loc 1 11 5 is_stmt 1 view .LVU3
+  28               		.loc 1 11 10 is_stmt 0 view .LVU4
+  29 0004 8FEF      		ldi r24,lo8(-1)
+  30               	.LVL1:
+  31               		.loc 1 11 10 view .LVU5
+  32 0006 84B9      		out 0x4,r24
+  12:txSwitch.c    ****     PORTB = 0x00;
+  33               		.loc 1 12 5 is_stmt 1 view .LVU6
+  34               		.loc 1 12 11 is_stmt 0 view .LVU7
+  35 0008 15B8      		out 0x5,__zero_reg__
+  36               	.L2:
+  13:txSwitch.c    ****   }
+  14:txSwitch.c    ****   if (pin == PIN13)
+  37               		.loc 1 14 3 is_stmt 1 view .LVU8
+  15:txSwitch.c    ****   {
+  16:txSwitch.c    ****   }
+  38               		.loc 1 16 3 view .LVU9
+  17:txSwitch.c    **** 
+  18:txSwitch.c    ****   send_str_p(UPLINK_USART, PSTR("SettingUp Tx Switch\r\n"));
+  39               		.loc 1 18 3 view .LVU10
+  40               	.LBB2:
+  41               		.loc 1 18 28 view .LVU11
+  42               		.loc 1 18 28 view .LVU12
+  43               	.LBE2:
+  44               		.loc 1 18 3 is_stmt 0 view .LVU13
+  45 000a 60E0      		ldi r22,lo8(__c.0)
+  46 000c 70E0      		ldi r23,hi8(__c.0)
+  47 000e 80E0      		ldi r24,0
+  48 0010 0C94 0000 		jmp send_str_p
+  49               	.LVL2:
+  50               		.cfi_endproc
+  51               	.LFE6:
+  53               	.global	txSwitchState
+  55               	txSwitchState:
+  56               	.LVL3:
+  57               	.LFB7:
+  19:txSwitch.c    **** }
+  20:txSwitch.c    **** void txSwitchState(uint8_t pin, uint8_t val)
+  21:txSwitch.c    **** {
+  58               		.loc 1 21 1 is_stmt 1 view -0
+  59               		.cfi_startproc
+  60               	/* prologue: function */
+  61               	/* frame size = 0 */
+  62               	/* stack size = 0 */
+  63               	.L__stack_usage = 0
+  22:txSwitch.c    **** 
+  23:txSwitch.c    ****   if (pin == PIN12 && val == 0)
+  64               		.loc 1 23 3 view .LVU15
+  65               		.loc 1 23 6 is_stmt 0 view .LVU16
+  66 0014 8C30      		cpi r24,lo8(12)
+  67 0016 01F4      		brne .L4
+  68               		.loc 1 23 20 discriminator 1 view .LVU17
+  69 0018 6111      		cpse r22,__zero_reg__
+  70 001a 00C0      		rjmp .L5
+  71               	.L8:
+  24:txSwitch.c    ****   {
+  25:txSwitch.c    ****     //send_str_p(UPLINK_USART,PSTR("Switching OFF TX Port\r\n"));
+  26:txSwitch.c    **** 
+  27:txSwitch.c    ****     PORTB = PIN12_OFF;
+  28:txSwitch.c    ****   }
+  29:txSwitch.c    ****   else if (pin == PIN12 && val == 1)
+  30:txSwitch.c    ****   {
+  31:txSwitch.c    ****     //  send_str_p(UPLINK_USART,PSTR("Switching ON TX Port\r\n"));
+  32:txSwitch.c    ****     PORTB = PIN12_ON;
+  33:txSwitch.c    ****   }
+  34:txSwitch.c    **** 
+  35:txSwitch.c    ****   else if (pin == PIN13 && val == 0)
+  36:txSwitch.c    ****   {
+  37:txSwitch.c    ****     //send_str_p(UPLINK_USART,PSTR("Switching OFF TX Port\r\n"));
+  38:txSwitch.c    **** 
+  39:txSwitch.c    ****     PORTB = PIN13_OFF;
+  72               		.loc 1 39 5 is_stmt 1 view .LVU18
+  73               		.loc 1 39 11 is_stmt 0 view .LVU19
+  74 001c 15B8      		out 0x5,__zero_reg__
+  75 001e 0895      		ret
+  76               	.L5:
+  29:txSwitch.c    ****   {
+  77               		.loc 1 29 8 is_stmt 1 discriminator 1 view .LVU20
+  32:txSwitch.c    ****   }
+  78               		.loc 1 32 11 is_stmt 0 discriminator 1 view .LVU21
+  79 0020 80E4      		ldi r24,lo8(64)
+  80               	.LVL4:
+  29:txSwitch.c    ****   {
+  81               		.loc 1 29 25 discriminator 1 view .LVU22
+  82 0022 6130      		cpi r22,lo8(1)
+  83 0024 01F0      		breq .L9
+  84               	.L3:
+  85               	/* epilogue start */
+  40:txSwitch.c    ****   }
+  41:txSwitch.c    ****   else if (pin == PIN13 && val == 1)
+  42:txSwitch.c    ****   {
+  43:txSwitch.c    ****     //  send_str_p(UPLINK_USART,PSTR("Switching ON TX Port\r\n"));
+  44:txSwitch.c    ****     PORTB = PIN13_ON;
+  45:txSwitch.c    ****   }
+  46:txSwitch.c    **** }...
+  86               		.loc 1 46 1 view .LVU23
+  87 0026 0895      		ret
+  88               	.LVL5:
+  89               	.L4:
+  29:txSwitch.c    ****   else if (pin == PIN12 && val == 1)
+  90               		.loc 1 29 8 is_stmt 1 view .LVU24
+  35:txSwitch.c    ****   else if (pin == PIN13 && val == 0)
+  91               		.loc 1 35 8 view .LVU25
+  35:txSwitch.c    ****   else if (pin == PIN13 && val == 0)
+  92               		.loc 1 35 11 is_stmt 0 view .LVU26
+  93 0028 8D30      		cpi r24,lo8(13)
+  94 002a 01F4      		brne .L3
+  35:txSwitch.c    ****   else if (pin == PIN13 && val == 0)
+  95               		.loc 1 35 25 discriminator 1 view .LVU27
+  96 002c 6623      		tst r22
+  97 002e 01F0      		breq .L8
+  41:txSwitch.c    ****   else if (pin == PIN13 && val == 1)
+  98               		.loc 1 41 8 is_stmt 1 discriminator 1 view .LVU28
+  41:txSwitch.c    ****   else if (pin == PIN13 && val == 1)
+  99               		.loc 1 41 25 is_stmt 0 discriminator 1 view .LVU29
+ 100 0030 6130      		cpi r22,lo8(1)
+ 101 0032 01F4      		brne .L3
+  44:txSwitch.c    ****     PORTB = PIN13_ON;
+ 102               		.loc 1 44 5 is_stmt 1 view .LVU30
+  44:txSwitch.c    ****     PORTB = PIN13_ON;
+ 103               		.loc 1 44 11 is_stmt 0 view .LVU31
+ 104 0034 80E8      		ldi r24,lo8(-128)
+ 105               	.LVL6:
+ 106               	.L9:
+  44:txSwitch.c    ****     PORTB = PIN13_ON;
+ 107               		.loc 1 44 11 view .LVU32
+ 108 0036 85B9      		out 0x5,r24
+ 109               		.loc 1 46 1 view .LVU33
+ 110 0038 00C0      		rjmp .L3
+ 111               		.cfi_endproc
+ 112               	.LFE7:
+ 114               		.section	.progmem.data,"a",@progbits
+ 117               	__c.0:
+ 118 0000 5365 7474 		.string	"SettingUp Tx Switch\r\n"
+ 118      696E 6755 
+ 118      7020 5478 
+ 118      2053 7769 
+ 118      7463 680D 
+ 119               		.text
+ 120               	.Letext0:
+ 121               		.file 2 "/usr/avr/include/stdint.h"
+ 122               		.file 3 "usart.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 txSwitch.c
+     /tmp/ccsUi5h4.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccsUi5h4.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccsUi5h4.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccsUi5h4.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccsUi5h4.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccsUi5h4.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccsUi5h4.s:13     .text:0000000000000000 setupTxSwitch
+     /tmp/ccsUi5h4.s:117    .progmem.data:0000000000000000 __c.0
+     /tmp/ccsUi5h4.s:55     .text:0000000000000014 txSwitchState
+
+UNDEFINED SYMBOLS
+send_str_p

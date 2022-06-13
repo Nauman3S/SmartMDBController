@@ -1,0 +1,800 @@
+   1               		.file	"millisF.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	secondsV
+  13               	secondsV:
+  14               	.LVL0:
+  15               	.LFB8:
+  16               		.file 1 "millisF.c"
+   1:millisF.c     **** /*
+   2:millisF.c     ****  * Project: Lightweight millisecond tracking library
+   3:millisF.c     ****  * Author: Zak Kemble, contact@zakkemble.net
+   4:millisF.c     ****  * Copyright: (C) 2018 by Zak Kemble
+   5:millisF.c     ****  * License: GNU GPL v3 (see License_GPL-3.0.txt) or MIT (see License_MIT.txt)
+   6:millisF.c     ****  * Web: http://blog.zakkemble.net/millisecond-tracking-library-for-avr/
+   7:millisF.c     ****  */
+   8:millisF.c     **** 
+   9:millisF.c     **** // Here we're using C code in a .cpp file so Arduino compiles with the correct settings (mainly C99
+  10:millisF.c     **** 
+  11:millisF.c     **** #include <avr/io.h>
+  12:millisF.c     **** #include <avr/interrupt.h>
+  13:millisF.c     **** #include <avr/power.h>
+  14:millisF.c     **** #include <util/atomic.h>
+  15:millisF.c     **** #include "millisF.h"
+  16:millisF.c     **** 
+  17:millisF.c     **** #define F_CPU 16000000UL
+  18:millisF.c     **** 
+  19:millisF.c     **** #ifndef F_CPU
+  20:millisF.c     **** 	#error "F_CPU not defined!"
+  21:millisF.c     **** #endif
+  22:millisF.c     **** 
+  23:millisF.c     **** #if F_CPU < 256 || F_CPU >= 32640000
+  24:millisF.c     **** 	#error "Bad F_CPU setting (<256 or >=32640000)"
+  25:millisF.c     **** #endif
+  26:millisF.c     **** 
+  27:millisF.c     **** #ifndef MILLIS_TIMER
+  28:millisF.c     **** 	#error "Bad MILLIS_TIMER set"
+  29:millisF.c     **** #endif
+  30:millisF.c     **** 
+  31:millisF.c     **** // Decide what what prescaler and registers to use
+  32:millisF.c     **** #if MILLIS_TIMER == MILLIS_TIMER0
+  33:millisF.c     **** 
+  34:millisF.c     **** // Timer0
+  35:millisF.c     **** 
+  36:millisF.c     **** #if F_CPU > 16320000 // 16.32MHz - 65.28MHz
+  37:millisF.c     **** 	#define CLOCKSEL (_BV(CS20))
+  38:millisF.c     **** 	#define PRESCALER 256
+  39:millisF.c     **** #elif F_CPU > 2040000 // 2.04MHz - 16.32MHz
+  40:millisF.c     **** 	#define CLOCKSEL (_BV(CS01)|_BV(CS00))
+  41:millisF.c     **** 	#define PRESCALER 64
+  42:millisF.c     **** #elif F_CPU > 255 // 256Hz - 2.04MHz
+  43:millisF.c     **** 	#define CLOCKSEL (_BV(CS01))
+  44:millisF.c     **** 	#define PRESCALER 8
+  45:millisF.c     **** #endif
+  46:millisF.c     **** 
+  47:millisF.c     **** #define REG_TCCRA		TCCR0A
+  48:millisF.c     **** #define REG_TCCRB		TCCR0B
+  49:millisF.c     **** #define REG_TIMSK		TIMSK0
+  50:millisF.c     **** #define REG_OCR			OCR0A
+  51:millisF.c     **** #define BIT_WGM			WGM01
+  52:millisF.c     **** #define BIT_OCIE		OCIE0A
+  53:millisF.c     **** #ifdef TIMER0_COMPA_vect
+  54:millisF.c     **** 	#define ISR_VECT		TIMER0_COMPA_vect
+  55:millisF.c     **** #else
+  56:millisF.c     **** 	#define ISR_VECT		TIM0_COMPA_vect
+  57:millisF.c     **** #endif
+  58:millisF.c     **** #define pwr_enable()	power_timer0_enable()
+  59:millisF.c     **** #define pwr_disable()	power_timer0_disable()
+  60:millisF.c     **** 
+  61:millisF.c     **** #define SET_TCCRA()	(REG_TCCRA = _BV(BIT_WGM))
+  62:millisF.c     **** #define SET_TCCRB()	(REG_TCCRB = CLOCKSEL)
+  63:millisF.c     **** 
+  64:millisF.c     **** #elif MILLIS_TIMER == MILLIS_TIMER1
+  65:millisF.c     **** 
+  66:millisF.c     **** // Timer1
+  67:millisF.c     **** 
+  68:millisF.c     **** // 1KHz - 65.28MHz
+  69:millisF.c     **** #define CLOCKSEL (_BV(CS10))
+  70:millisF.c     **** #define PRESCALER 1
+  71:millisF.c     **** 
+  72:millisF.c     **** #define REG_TCCRA		TCCR1A
+  73:millisF.c     **** #define REG_TCCRB		TCCR1B
+  74:millisF.c     **** #define REG_TIMSK		TIMSK1
+  75:millisF.c     **** #define REG_OCR			OCR1A
+  76:millisF.c     **** #define BIT_WGM			WGM12
+  77:millisF.c     **** #define BIT_OCIE		OCIE1A
+  78:millisF.c     **** #ifdef TIMER1_COMPA_vect
+  79:millisF.c     **** 	#define ISR_VECT		TIMER1_COMPA_vect
+  80:millisF.c     **** #else
+  81:millisF.c     **** 	#define ISR_VECT		TIM1_COMPA_vect
+  82:millisF.c     **** #endif
+  83:millisF.c     **** #define pwr_enable()	power_timer1_enable()
+  84:millisF.c     **** #define pwr_disable()	power_timer1_disable()
+  85:millisF.c     **** 
+  86:millisF.c     **** #define SET_TCCRA()	(REG_TCCRA = 0)
+  87:millisF.c     **** #define SET_TCCRB()	(REG_TCCRB = _BV(BIT_WGM)|CLOCKSEL)
+  88:millisF.c     **** 
+  89:millisF.c     **** #elif MILLIS_TIMER == MILLIS_TIMER2
+  90:millisF.c     **** 
+  91:millisF.c     **** // Timer2
+  92:millisF.c     **** 
+  93:millisF.c     **** #if F_CPU > 16320000 // 16.32MHz - 32.64MHz
+  94:millisF.c     **** 	#define CLOCKSEL (_BV(CS22)|_BV(CS20))
+  95:millisF.c     **** 	#define PRESCALER 128
+  96:millisF.c     **** #elif F_CPU > 8160000 // 8.16MHz - 16.32MHz
+  97:millisF.c     **** 	#define CLOCKSEL (_BV(CS22))
+  98:millisF.c     **** 	#define PRESCALER 64
+  99:millisF.c     **** #elif F_CPU > 2040000 // 2.04MHz - 8.16MHz
+ 100:millisF.c     **** 	#define CLOCKSEL (_BV(CS21)|_BV(CS20))
+ 101:millisF.c     **** 	#define PRESCALER 32
+ 102:millisF.c     **** #elif F_CPU > 255 // 256Hz - 2.04MHz
+ 103:millisF.c     **** 	#define CLOCKSEL (_BV(CS21))
+ 104:millisF.c     **** 	#define PRESCALER 8
+ 105:millisF.c     **** #endif
+ 106:millisF.c     **** 
+ 107:millisF.c     **** #define REG_TCCRA		TCCR2A
+ 108:millisF.c     **** #define REG_TCCRB		TCCR2B
+ 109:millisF.c     **** #define REG_TIMSK		TIMSK2
+ 110:millisF.c     **** #define REG_OCR			OCR2A
+ 111:millisF.c     **** #define BIT_WGM			WGM21
+ 112:millisF.c     **** #define BIT_OCIE		OCIE2A
+ 113:millisF.c     **** #define ISR_VECT		TIMER2_COMPA_vect
+ 114:millisF.c     **** #define pwr_enable()	power_timer2_enable()
+ 115:millisF.c     **** #define pwr_disable()	power_timer2_disable()
+ 116:millisF.c     **** 
+ 117:millisF.c     **** #define SET_TCCRA()	(REG_TCCRA = _BV(BIT_WGM))
+ 118:millisF.c     **** #define SET_TCCRB()	(REG_TCCRB = CLOCKSEL)
+ 119:millisF.c     **** 
+ 120:millisF.c     **** #else
+ 121:millisF.c     **** 	#error "Bad MILLIS_TIMER set"
+ 122:millisF.c     **** #endif
+ 123:millisF.c     **** 
+ 124:millisF.c     **** static volatile millis_t milliseconds;
+ 125:millisF.c     **** 
+ 126:millisF.c     **** //converts seconds to the corresponding ms
+ 127:millisF.c     **** millis_t secondsV(millis_t v){
+  17               		.loc 1 127 30 view -0
+  18               		.cfi_startproc
+  19               		.loc 1 127 30 is_stmt 0 view .LVU1
+  20 0000 CF93      		push r28
+  21               	.LCFI0:
+  22               		.cfi_def_cfa_offset 4
+  23               		.cfi_offset 28, -3
+  24 0002 DF93      		push r29
+  25               	.LCFI1:
+  26               		.cfi_def_cfa_offset 5
+  27               		.cfi_offset 29, -4
+  28 0004 00D0      		rcall .
+  29 0006 0F92      		push __tmp_reg__
+  30               	.LCFI2:
+  31               		.cfi_def_cfa_offset 9
+  32 0008 CDB7      		in r28,__SP_L__
+  33 000a DEB7      		in r29,__SP_H__
+  34               	.LCFI3:
+  35               		.cfi_def_cfa_register 28
+  36               	/* prologue: function */
+  37               	/* frame size = 4 */
+  38               	/* stack size = 6 */
+  39               	.L__stack_usage = 6
+ 128:millisF.c     ****     millis_t scale=1000;
+  40               		.loc 1 128 5 is_stmt 1 view .LVU2
+  41               	.LVL1:
+ 129:millisF.c     ****     return v*1000;
+  42               		.loc 1 129 5 view .LVU3
+  43               		.loc 1 129 13 is_stmt 0 view .LVU4
+  44 000c A8EE      		ldi r26,lo8(-24)
+  45 000e B3E0      		ldi r27,lo8(3)
+  46 0010 9B01      		movw r18,r22
+  47 0012 AC01      		movw r20,r24
+  48 0014 0E94 0000 		call __muluhisi3
+  49               	.LVL2:
+  50               	/* epilogue start */
+ 130:millisF.c     **** }
+  51               		.loc 1 130 1 view .LVU5
+  52 0018 0F90      		pop __tmp_reg__
+  53 001a 0F90      		pop __tmp_reg__
+  54 001c 0F90      		pop __tmp_reg__
+  55 001e 0F90      		pop __tmp_reg__
+  56 0020 DF91      		pop r29
+  57 0022 CF91      		pop r28
+  58 0024 0895      		ret
+  59               		.cfi_endproc
+  60               	.LFE8:
+  62               	.global	millis_init
+  64               	millis_init:
+  65               	.LFB9:
+ 131:millisF.c     **** // Initialise library
+ 132:millisF.c     **** void millis_init()
+ 133:millisF.c     **** {
+  66               		.loc 1 133 1 is_stmt 1 view -0
+  67               		.cfi_startproc
+  68               	/* prologue: function */
+  69               	/* frame size = 0 */
+  70               	/* stack size = 0 */
+  71               	.L__stack_usage = 0
+ 134:millisF.c     **** 	// Timer settings
+ 135:millisF.c     **** 	SET_TCCRA();
+  72               		.loc 1 135 2 view .LVU7
+  73 0026 82E0      		ldi r24,lo8(2)
+  74 0028 8093 B000 		sts 176,r24
+ 136:millisF.c     **** 	SET_TCCRB();
+  75               		.loc 1 136 2 view .LVU8
+  76 002c 94E0      		ldi r25,lo8(4)
+  77 002e 9093 B100 		sts 177,r25
+ 137:millisF.c     **** 	REG_TIMSK = _BV(BIT_OCIE);
+  78               		.loc 1 137 2 view .LVU9
+  79               		.loc 1 137 12 is_stmt 0 view .LVU10
+  80 0032 8093 7000 		sts 112,r24
+ 138:millisF.c     **** 	REG_OCR = ((F_CPU / PRESCALER) / 1000);
+  81               		.loc 1 138 2 is_stmt 1 view .LVU11
+  82               		.loc 1 138 10 is_stmt 0 view .LVU12
+  83 0036 8AEF      		ldi r24,lo8(-6)
+  84 0038 8093 B300 		sts 179,r24
+  85               	/* epilogue start */
+ 139:millisF.c     **** }
+  86               		.loc 1 139 1 view .LVU13
+  87 003c 0895      		ret
+  88               		.cfi_endproc
+  89               	.LFE9:
+  91               	.global	millis_get
+  93               	millis_get:
+  94               	.LFB10:
+ 140:millisF.c     **** 
+ 141:millisF.c     **** // Get current milliseconds
+ 142:millisF.c     **** millis_t millis_get()
+ 143:millisF.c     **** {
+  95               		.loc 1 143 1 is_stmt 1 view -0
+  96               		.cfi_startproc
+  97 003e CF93      		push r28
+  98               	.LCFI4:
+  99               		.cfi_def_cfa_offset 4
+ 100               		.cfi_offset 28, -3
+ 101 0040 DF93      		push r29
+ 102               	.LCFI5:
+ 103               		.cfi_def_cfa_offset 5
+ 104               		.cfi_offset 29, -4
+ 105 0042 00D0      		rcall .
+ 106 0044 0F92      		push __tmp_reg__
+ 107               	.LCFI6:
+ 108               		.cfi_def_cfa_offset 9
+ 109 0046 CDB7      		in r28,__SP_L__
+ 110 0048 DEB7      		in r29,__SP_H__
+ 111               	.LCFI7:
+ 112               		.cfi_def_cfa_register 28
+ 113               	/* prologue: function */
+ 114               	/* frame size = 4 */
+ 115               	/* stack size = 6 */
+ 116               	.L__stack_usage = 6
+ 144:millisF.c     **** 	millis_t ms;
+ 117               		.loc 1 144 2 view .LVU15
+ 145:millisF.c     **** 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+ 118               		.loc 1 145 2 view .LVU16
+ 119               	.LBB19:
+ 120               		.loc 1 145 2 view .LVU17
+ 121 004a 8FB7      		in r24,__SREG__
+ 122               	.LVL3:
+ 123               	.LBB20:
+ 124               	.LBI20:
+ 125               		.file 2 "/usr/avr/include/util/atomic.h"
+   1:/usr/avr/include/util/atomic.h **** /* Copyright (c) 2007 Dean Camera
+   2:/usr/avr/include/util/atomic.h ****    All rights reserved.
+   3:/usr/avr/include/util/atomic.h **** 
+   4:/usr/avr/include/util/atomic.h ****    Redistribution and use in source and binary forms, with or without
+   5:/usr/avr/include/util/atomic.h ****    modification, are permitted provided that the following conditions are met:
+   6:/usr/avr/include/util/atomic.h **** 
+   7:/usr/avr/include/util/atomic.h ****    * Redistributions of source code must retain the above copyright
+   8:/usr/avr/include/util/atomic.h ****      notice, this list of conditions and the following disclaimer.
+   9:/usr/avr/include/util/atomic.h **** 
+  10:/usr/avr/include/util/atomic.h ****    * Redistributions in binary form must reproduce the above copyright
+  11:/usr/avr/include/util/atomic.h ****      notice, this list of conditions and the following disclaimer in
+  12:/usr/avr/include/util/atomic.h ****      the documentation and/or other materials provided with the
+  13:/usr/avr/include/util/atomic.h ****      distribution.
+  14:/usr/avr/include/util/atomic.h **** 
+  15:/usr/avr/include/util/atomic.h ****    * Neither the name of the copyright holders nor the names of
+  16:/usr/avr/include/util/atomic.h ****      contributors may be used to endorse or promote products derived
+  17:/usr/avr/include/util/atomic.h ****      from this software without specific prior written permission.
+  18:/usr/avr/include/util/atomic.h **** 
+  19:/usr/avr/include/util/atomic.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  20:/usr/avr/include/util/atomic.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  21:/usr/avr/include/util/atomic.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  22:/usr/avr/include/util/atomic.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  23:/usr/avr/include/util/atomic.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  24:/usr/avr/include/util/atomic.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  25:/usr/avr/include/util/atomic.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  26:/usr/avr/include/util/atomic.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  27:/usr/avr/include/util/atomic.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  28:/usr/avr/include/util/atomic.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  29:/usr/avr/include/util/atomic.h ****   POSSIBILITY OF SUCH DAMAGE.
+  30:/usr/avr/include/util/atomic.h **** */
+  31:/usr/avr/include/util/atomic.h **** 
+  32:/usr/avr/include/util/atomic.h **** /* $Id: atomic.h 2158 2010-06-10 15:48:28Z joerg_wunsch $ */
+  33:/usr/avr/include/util/atomic.h **** 
+  34:/usr/avr/include/util/atomic.h **** #ifndef _UTIL_ATOMIC_H_
+  35:/usr/avr/include/util/atomic.h **** #define _UTIL_ATOMIC_H_ 1
+  36:/usr/avr/include/util/atomic.h **** 
+  37:/usr/avr/include/util/atomic.h **** #include <avr/io.h>
+  38:/usr/avr/include/util/atomic.h **** #include <avr/interrupt.h>
+  39:/usr/avr/include/util/atomic.h **** 
+  40:/usr/avr/include/util/atomic.h **** #if !defined(__DOXYGEN__)
+  41:/usr/avr/include/util/atomic.h **** /* Internal helper functions. */
+  42:/usr/avr/include/util/atomic.h **** static __inline__ uint8_t __iSeiRetVal(void)
+  43:/usr/avr/include/util/atomic.h **** {
+  44:/usr/avr/include/util/atomic.h ****     sei();
+  45:/usr/avr/include/util/atomic.h ****     return 1;
+  46:/usr/avr/include/util/atomic.h **** }
+  47:/usr/avr/include/util/atomic.h **** 
+  48:/usr/avr/include/util/atomic.h **** static __inline__ uint8_t __iCliRetVal(void)
+ 126               		.loc 2 48 27 view .LVU18
+ 127               	.LBB21:
+  49:/usr/avr/include/util/atomic.h **** {
+  50:/usr/avr/include/util/atomic.h ****     cli();
+ 128               		.loc 2 50 5 view .LVU19
+ 129               	/* #APP */
+ 130               	 ;  50 "/usr/avr/include/util/atomic.h" 1
+ 131 004c F894      		cli
+ 132               	 ;  0 "" 2
+  51:/usr/avr/include/util/atomic.h ****     return 1;
+ 133               		.loc 2 51 5 view .LVU20
+ 134               	.LVL4:
+ 135               		.loc 2 51 5 is_stmt 0 view .LVU21
+ 136               	/* #NOAPP */
+ 137               	.LBE21:
+ 138               	.LBE20:
+ 139               		.loc 1 145 2 is_stmt 1 view .LVU22
+ 146:millisF.c     **** 	{
+ 147:millisF.c     **** 		ms = milliseconds;
+ 140               		.loc 1 147 3 view .LVU23
+ 141               		.loc 1 147 6 is_stmt 0 view .LVU24
+ 142 004e 2091 0000 		lds r18,milliseconds
+ 143 0052 3091 0000 		lds r19,milliseconds+1
+ 144 0056 4091 0000 		lds r20,milliseconds+2
+ 145 005a 5091 0000 		lds r21,milliseconds+3
+ 146 005e 2983      		std Y+1,r18
+ 147 0060 3A83      		std Y+2,r19
+ 148 0062 4B83      		std Y+3,r20
+ 149 0064 5C83      		std Y+4,r21
+ 150               	.LVL5:
+ 145:millisF.c     **** 	{
+ 151               		.loc 1 145 2 is_stmt 1 view .LVU25
+ 145:millisF.c     **** 	{
+ 152               		.loc 1 145 2 view .LVU26
+ 153               	.LBB22:
+ 154               	.LBI22:
+  52:/usr/avr/include/util/atomic.h **** }
+  53:/usr/avr/include/util/atomic.h **** 
+  54:/usr/avr/include/util/atomic.h **** static __inline__ void __iSeiParam(const uint8_t *__s)
+  55:/usr/avr/include/util/atomic.h **** {
+  56:/usr/avr/include/util/atomic.h ****     sei();
+  57:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+  58:/usr/avr/include/util/atomic.h ****     (void)__s;
+  59:/usr/avr/include/util/atomic.h **** }
+  60:/usr/avr/include/util/atomic.h **** 
+  61:/usr/avr/include/util/atomic.h **** static __inline__ void __iCliParam(const uint8_t *__s)
+  62:/usr/avr/include/util/atomic.h **** {
+  63:/usr/avr/include/util/atomic.h ****     cli();
+  64:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+  65:/usr/avr/include/util/atomic.h ****     (void)__s;
+  66:/usr/avr/include/util/atomic.h **** }
+  67:/usr/avr/include/util/atomic.h **** 
+  68:/usr/avr/include/util/atomic.h **** static __inline__ void __iRestore(const  uint8_t *__s)
+ 155               		.loc 2 68 24 view .LVU27
+ 156               	.LBB23:
+  69:/usr/avr/include/util/atomic.h **** {
+  70:/usr/avr/include/util/atomic.h ****     SREG = *__s;
+ 157               		.loc 2 70 5 view .LVU28
+ 158               		.loc 2 70 10 is_stmt 0 view .LVU29
+ 159 0066 8FBF      		out __SREG__,r24
+  71:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 160               		.loc 2 71 5 is_stmt 1 view .LVU30
+ 161               	.LVL6:
+ 162               		.loc 2 71 5 is_stmt 0 view .LVU31
+ 163               	.LBE23:
+ 164               	.LBE22:
+ 165               	.LBE19:
+ 148:millisF.c     **** 	}
+ 149:millisF.c     **** 	return ms;
+ 166               		.loc 1 149 2 is_stmt 1 view .LVU32
+ 150:millisF.c     **** }
+ 167               		.loc 1 150 1 is_stmt 0 view .LVU33
+ 168 0068 6981      		ldd r22,Y+1
+ 169 006a 7A81      		ldd r23,Y+2
+ 170 006c 8B81      		ldd r24,Y+3
+ 171 006e 9C81      		ldd r25,Y+4
+ 172               	/* epilogue start */
+ 173 0070 0F90      		pop __tmp_reg__
+ 174 0072 0F90      		pop __tmp_reg__
+ 175 0074 0F90      		pop __tmp_reg__
+ 176 0076 0F90      		pop __tmp_reg__
+ 177 0078 DF91      		pop r29
+ 178 007a CF91      		pop r28
+ 179 007c 0895      		ret
+ 180               		.cfi_endproc
+ 181               	.LFE10:
+ 183               	.global	millis_resume
+ 185               	millis_resume:
+ 186               	.LFB11:
+ 151:millisF.c     **** 
+ 152:millisF.c     **** // Turn on timer and resume time keeping
+ 153:millisF.c     **** void millis_resume()
+ 154:millisF.c     **** {
+ 187               		.loc 1 154 1 is_stmt 1 view -0
+ 188               		.cfi_startproc
+ 189               	/* prologue: function */
+ 190               	/* frame size = 0 */
+ 191               	/* stack size = 0 */
+ 192               	.L__stack_usage = 0
+ 155:millisF.c     **** 	pwr_enable();
+ 193               		.loc 1 155 2 view .LVU35
+ 194 007e E4E6      		ldi r30,lo8(100)
+ 195 0080 F0E0      		ldi r31,0
+ 196 0082 8081      		ld r24,Z
+ 197 0084 8F7B      		andi r24,lo8(-65)
+ 198 0086 8083      		st Z,r24
+ 156:millisF.c     **** 	REG_TIMSK |= _BV(BIT_OCIE);
+ 199               		.loc 1 156 2 view .LVU36
+ 200               		.loc 1 156 12 is_stmt 0 view .LVU37
+ 201 0088 E0E7      		ldi r30,lo8(112)
+ 202 008a F0E0      		ldi r31,0
+ 203 008c 8081      		ld r24,Z
+ 204 008e 8260      		ori r24,lo8(2)
+ 205 0090 8083      		st Z,r24
+ 206               	/* epilogue start */
+ 157:millisF.c     **** }
+ 207               		.loc 1 157 1 view .LVU38
+ 208 0092 0895      		ret
+ 209               		.cfi_endproc
+ 210               	.LFE11:
+ 212               	.global	millis_pause
+ 214               	millis_pause:
+ 215               	.LFB12:
+ 158:millisF.c     **** 
+ 159:millisF.c     **** // Pause time keeping and turn off timer to save power
+ 160:millisF.c     **** void millis_pause()
+ 161:millisF.c     **** {
+ 216               		.loc 1 161 1 is_stmt 1 view -0
+ 217               		.cfi_startproc
+ 218               	/* prologue: function */
+ 219               	/* frame size = 0 */
+ 220               	/* stack size = 0 */
+ 221               	.L__stack_usage = 0
+ 162:millisF.c     **** 	REG_TIMSK &= ~_BV(BIT_OCIE);
+ 222               		.loc 1 162 2 view .LVU40
+ 223               		.loc 1 162 12 is_stmt 0 view .LVU41
+ 224 0094 E0E7      		ldi r30,lo8(112)
+ 225 0096 F0E0      		ldi r31,0
+ 226 0098 8081      		ld r24,Z
+ 227 009a 8D7F      		andi r24,lo8(-3)
+ 228 009c 8083      		st Z,r24
+ 163:millisF.c     **** 	pwr_disable();
+ 229               		.loc 1 163 2 is_stmt 1 view .LVU42
+ 230 009e E4E6      		ldi r30,lo8(100)
+ 231 00a0 F0E0      		ldi r31,0
+ 232 00a2 8081      		ld r24,Z
+ 233 00a4 8064      		ori r24,lo8(64)
+ 234 00a6 8083      		st Z,r24
+ 235               	/* epilogue start */
+ 164:millisF.c     **** }
+ 236               		.loc 1 164 1 is_stmt 0 view .LVU43
+ 237 00a8 0895      		ret
+ 238               		.cfi_endproc
+ 239               	.LFE12:
+ 241               	.global	millis_reset
+ 243               	millis_reset:
+ 244               	.LFB13:
+ 165:millisF.c     **** 
+ 166:millisF.c     **** // Reset milliseconds count to 0
+ 167:millisF.c     **** void millis_reset()
+ 168:millisF.c     **** {
+ 245               		.loc 1 168 1 is_stmt 1 view -0
+ 246               		.cfi_startproc
+ 247               	/* prologue: function */
+ 248               	/* frame size = 0 */
+ 249               	/* stack size = 0 */
+ 250               	.L__stack_usage = 0
+ 169:millisF.c     **** 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+ 251               		.loc 1 169 2 view .LVU45
+ 252               	.LBB29:
+ 253               		.loc 1 169 2 view .LVU46
+ 254 00aa 8FB7      		in r24,__SREG__
+ 255               	.LVL7:
+ 256               	.LBB30:
+ 257               	.LBI30:
+  48:/usr/avr/include/util/atomic.h **** {
+ 258               		.loc 2 48 27 view .LVU47
+ 259               	.LBB31:
+  50:/usr/avr/include/util/atomic.h ****     return 1;
+ 260               		.loc 2 50 5 view .LVU48
+ 261               	/* #APP */
+ 262               	 ;  50 "/usr/avr/include/util/atomic.h" 1
+ 263 00ac F894      		cli
+ 264               	 ;  0 "" 2
+  51:/usr/avr/include/util/atomic.h **** }
+ 265               		.loc 2 51 5 view .LVU49
+ 266               	.LVL8:
+  51:/usr/avr/include/util/atomic.h **** }
+ 267               		.loc 2 51 5 is_stmt 0 view .LVU50
+ 268               	/* #NOAPP */
+ 269               	.LBE31:
+ 270               	.LBE30:
+ 271               		.loc 1 169 2 is_stmt 1 view .LVU51
+ 170:millisF.c     **** 	{
+ 171:millisF.c     **** 		milliseconds = 0;
+ 272               		.loc 1 171 3 view .LVU52
+ 273               		.loc 1 171 16 is_stmt 0 view .LVU53
+ 274 00ae 1092 0000 		sts milliseconds,__zero_reg__
+ 275 00b2 1092 0000 		sts milliseconds+1,__zero_reg__
+ 276 00b6 1092 0000 		sts milliseconds+2,__zero_reg__
+ 277 00ba 1092 0000 		sts milliseconds+3,__zero_reg__
+ 169:millisF.c     **** 	{
+ 278               		.loc 1 169 2 is_stmt 1 view .LVU54
+ 279               	.LVL9:
+ 169:millisF.c     **** 	{
+ 280               		.loc 1 169 2 view .LVU55
+ 281               	.LBB32:
+ 282               	.LBI32:
+  68:/usr/avr/include/util/atomic.h **** {
+ 283               		.loc 2 68 24 view .LVU56
+ 284               	.LBB33:
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 285               		.loc 2 70 5 view .LVU57
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 286               		.loc 2 70 10 is_stmt 0 view .LVU58
+ 287 00be 8FBF      		out __SREG__,r24
+ 288               		.loc 2 71 5 is_stmt 1 view .LVU59
+ 289               	.LVL10:
+ 290               	/* epilogue start */
+ 291               		.loc 2 71 5 is_stmt 0 view .LVU60
+ 292               	.LBE33:
+ 293               	.LBE32:
+ 294               	.LBE29:
+ 172:millisF.c     **** 	}
+ 173:millisF.c     **** }
+ 295               		.loc 1 173 1 view .LVU61
+ 296 00c0 0895      		ret
+ 297               		.cfi_endproc
+ 298               	.LFE13:
+ 300               	.global	millis_add
+ 302               	millis_add:
+ 303               	.LVL11:
+ 304               	.LFB14:
+ 174:millisF.c     **** 
+ 175:millisF.c     **** // Add time
+ 176:millisF.c     **** void millis_add(millis_t ms)
+ 177:millisF.c     **** {
+ 305               		.loc 1 177 1 is_stmt 1 view -0
+ 306               		.cfi_startproc
+ 307               	/* prologue: function */
+ 308               	/* frame size = 0 */
+ 309               	/* stack size = 0 */
+ 310               	.L__stack_usage = 0
+ 311               		.loc 1 177 1 is_stmt 0 view .LVU63
+ 312 00c2 462F      		mov r20,r22
+ 313 00c4 572F      		mov r21,r23
+ 314 00c6 BC01      		movw r22,r24
+ 315               	.LVL12:
+ 178:millisF.c     **** 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+ 316               		.loc 1 178 2 is_stmt 1 view .LVU64
+ 317               	.LBB39:
+ 318               		.loc 1 178 2 view .LVU65
+ 319 00c8 2FB7      		in r18,__SREG__
+ 320               	.LVL13:
+ 321               	.LBB40:
+ 322               	.LBI40:
+  48:/usr/avr/include/util/atomic.h **** {
+ 323               		.loc 2 48 27 view .LVU66
+ 324               	.LBB41:
+  50:/usr/avr/include/util/atomic.h ****     return 1;
+ 325               		.loc 2 50 5 view .LVU67
+ 326               	/* #APP */
+ 327               	 ;  50 "/usr/avr/include/util/atomic.h" 1
+ 328 00ca F894      		cli
+ 329               	 ;  0 "" 2
+  51:/usr/avr/include/util/atomic.h **** }
+ 330               		.loc 2 51 5 view .LVU68
+ 331               	.LVL14:
+  51:/usr/avr/include/util/atomic.h **** }
+ 332               		.loc 2 51 5 is_stmt 0 view .LVU69
+ 333               	/* #NOAPP */
+ 334               	.LBE41:
+ 335               	.LBE40:
+ 336               		.loc 1 178 2 is_stmt 1 view .LVU70
+ 179:millisF.c     **** 	{
+ 180:millisF.c     **** 		milliseconds += ms;
+ 337               		.loc 1 180 3 view .LVU71
+ 338               		.loc 1 180 16 is_stmt 0 view .LVU72
+ 339 00cc 8091 0000 		lds r24,milliseconds
+ 340 00d0 9091 0000 		lds r25,milliseconds+1
+ 341 00d4 A091 0000 		lds r26,milliseconds+2
+ 342 00d8 B091 0000 		lds r27,milliseconds+3
+ 343 00dc 840F      		add r24,r20
+ 344 00de 951F      		adc r25,r21
+ 345 00e0 A61F      		adc r26,r22
+ 346 00e2 B71F      		adc r27,r23
+ 347 00e4 8093 0000 		sts milliseconds,r24
+ 348 00e8 9093 0000 		sts milliseconds+1,r25
+ 349 00ec A093 0000 		sts milliseconds+2,r26
+ 350 00f0 B093 0000 		sts milliseconds+3,r27
+ 178:millisF.c     **** 	{
+ 351               		.loc 1 178 2 is_stmt 1 view .LVU73
+ 352               	.LVL15:
+ 178:millisF.c     **** 	{
+ 353               		.loc 1 178 2 view .LVU74
+ 354               	.LBB42:
+ 355               	.LBI42:
+  68:/usr/avr/include/util/atomic.h **** {
+ 356               		.loc 2 68 24 view .LVU75
+ 357               	.LBB43:
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 358               		.loc 2 70 5 view .LVU76
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 359               		.loc 2 70 10 is_stmt 0 view .LVU77
+ 360 00f4 2FBF      		out __SREG__,r18
+ 361               		.loc 2 71 5 is_stmt 1 view .LVU78
+ 362               	.LVL16:
+ 363               	/* epilogue start */
+ 364               		.loc 2 71 5 is_stmt 0 view .LVU79
+ 365               	.LBE43:
+ 366               	.LBE42:
+ 367               	.LBE39:
+ 181:millisF.c     **** 	}
+ 182:millisF.c     **** }
+ 368               		.loc 1 182 1 view .LVU80
+ 369 00f6 0895      		ret
+ 370               		.cfi_endproc
+ 371               	.LFE14:
+ 373               	.global	millis_subtract
+ 375               	millis_subtract:
+ 376               	.LVL17:
+ 377               	.LFB15:
+ 183:millisF.c     **** 
+ 184:millisF.c     **** // Subtract time
+ 185:millisF.c     **** void millis_subtract(millis_t ms)
+ 186:millisF.c     **** {
+ 378               		.loc 1 186 1 is_stmt 1 view -0
+ 379               		.cfi_startproc
+ 380               	/* prologue: function */
+ 381               	/* frame size = 0 */
+ 382               	/* stack size = 0 */
+ 383               	.L__stack_usage = 0
+ 384               		.loc 1 186 1 is_stmt 0 view .LVU82
+ 385 00f8 462F      		mov r20,r22
+ 386 00fa 572F      		mov r21,r23
+ 387 00fc BC01      		movw r22,r24
+ 388               	.LVL18:
+ 187:millisF.c     **** 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+ 389               		.loc 1 187 2 is_stmt 1 view .LVU83
+ 390               	.LBB49:
+ 391               		.loc 1 187 2 view .LVU84
+ 392 00fe 2FB7      		in r18,__SREG__
+ 393               	.LVL19:
+ 394               	.LBB50:
+ 395               	.LBI50:
+  48:/usr/avr/include/util/atomic.h **** {
+ 396               		.loc 2 48 27 view .LVU85
+ 397               	.LBB51:
+  50:/usr/avr/include/util/atomic.h ****     return 1;
+ 398               		.loc 2 50 5 view .LVU86
+ 399               	/* #APP */
+ 400               	 ;  50 "/usr/avr/include/util/atomic.h" 1
+ 401 0100 F894      		cli
+ 402               	 ;  0 "" 2
+  51:/usr/avr/include/util/atomic.h **** }
+ 403               		.loc 2 51 5 view .LVU87
+ 404               	.LVL20:
+  51:/usr/avr/include/util/atomic.h **** }
+ 405               		.loc 2 51 5 is_stmt 0 view .LVU88
+ 406               	/* #NOAPP */
+ 407               	.LBE51:
+ 408               	.LBE50:
+ 409               		.loc 1 187 2 is_stmt 1 view .LVU89
+ 188:millisF.c     **** 	{
+ 189:millisF.c     **** 		milliseconds -= ms;
+ 410               		.loc 1 189 3 view .LVU90
+ 411               		.loc 1 189 16 is_stmt 0 view .LVU91
+ 412 0102 8091 0000 		lds r24,milliseconds
+ 413 0106 9091 0000 		lds r25,milliseconds+1
+ 414 010a A091 0000 		lds r26,milliseconds+2
+ 415 010e B091 0000 		lds r27,milliseconds+3
+ 416 0112 841B      		sub r24,r20
+ 417 0114 950B      		sbc r25,r21
+ 418 0116 A60B      		sbc r26,r22
+ 419 0118 B70B      		sbc r27,r23
+ 420 011a 8093 0000 		sts milliseconds,r24
+ 421 011e 9093 0000 		sts milliseconds+1,r25
+ 422 0122 A093 0000 		sts milliseconds+2,r26
+ 423 0126 B093 0000 		sts milliseconds+3,r27
+ 187:millisF.c     **** 	{
+ 424               		.loc 1 187 2 is_stmt 1 view .LVU92
+ 425               	.LVL21:
+ 187:millisF.c     **** 	{
+ 426               		.loc 1 187 2 view .LVU93
+ 427               	.LBB52:
+ 428               	.LBI52:
+  68:/usr/avr/include/util/atomic.h **** {
+ 429               		.loc 2 68 24 view .LVU94
+ 430               	.LBB53:
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 431               		.loc 2 70 5 view .LVU95
+  70:/usr/avr/include/util/atomic.h ****     __asm__ volatile ("" ::: "memory");
+ 432               		.loc 2 70 10 is_stmt 0 view .LVU96
+ 433 012a 2FBF      		out __SREG__,r18
+ 434               		.loc 2 71 5 is_stmt 1 view .LVU97
+ 435               	.LVL22:
+ 436               	/* epilogue start */
+ 437               		.loc 2 71 5 is_stmt 0 view .LVU98
+ 438               	.LBE53:
+ 439               	.LBE52:
+ 440               	.LBE49:
+ 190:millisF.c     **** 	}
+ 191:millisF.c     **** }
+ 441               		.loc 1 191 1 view .LVU99
+ 442 012c 0895      		ret
+ 443               		.cfi_endproc
+ 444               	.LFE15:
+ 446               	.global	__vector_13
+ 448               	__vector_13:
+ 449               	.LFB16:
+ 192:millisF.c     **** 
+ 193:millisF.c     **** ISR(ISR_VECT)
+ 194:millisF.c     **** {
+ 450               		.loc 1 194 1 is_stmt 1 view -0
+ 451               		.cfi_startproc
+ 452 012e 1F92 1FB6 		__gcc_isr 1
+ 452      1F92 1124 
+ 452      8F93 
+ 453 0138 9F93      		push r25
+ 454               	.LCFI8:
+ 455               		.cfi_def_cfa_offset 4
+ 456               		.cfi_offset 25, -3
+ 457 013a AF93      		push r26
+ 458               	.LCFI9:
+ 459               		.cfi_def_cfa_offset 5
+ 460               		.cfi_offset 26, -4
+ 461 013c BF93      		push r27
+ 462               	.LCFI10:
+ 463               		.cfi_def_cfa_offset 6
+ 464               		.cfi_offset 27, -5
+ 465               	/* prologue: Signal */
+ 466               	/* frame size = 0 */
+ 467               	/* stack size = 3...7 */
+ 468               	.L__stack_usage = 3 + __gcc_isr.n_pushed
+ 195:millisF.c     **** 	++milliseconds;
+ 469               		.loc 1 195 2 view .LVU101
+ 470 013e 8091 0000 		lds r24,milliseconds
+ 471 0142 9091 0000 		lds r25,milliseconds+1
+ 472 0146 A091 0000 		lds r26,milliseconds+2
+ 473 014a B091 0000 		lds r27,milliseconds+3
+ 474 014e 0196      		adiw r24,1
+ 475 0150 A11D      		adc r26,__zero_reg__
+ 476 0152 B11D      		adc r27,__zero_reg__
+ 477 0154 8093 0000 		sts milliseconds,r24
+ 478 0158 9093 0000 		sts milliseconds+1,r25
+ 479 015c A093 0000 		sts milliseconds+2,r26
+ 480 0160 B093 0000 		sts milliseconds+3,r27
+ 481               	/* epilogue start */
+ 196:millisF.c     **** }
+ 482               		.loc 1 196 1 is_stmt 0 view .LVU102
+ 483 0164 BF91      		pop r27
+ 484 0166 AF91      		pop r26
+ 485 0168 9F91      		pop r25
+ 486 016a 8F91 1F90 		__gcc_isr 2
+ 486      1FBE 1F90 
+ 487 0172 1895      		reti
+ 488               		__gcc_isr 0,r24
+ 489               		.cfi_endproc
+ 490               	.LFE16:
+ 492               		.local	milliseconds
+ 493               		.comm	milliseconds,4,1
+ 494               	.Letext0:
+ 495               		.file 3 "/usr/avr/include/stdint.h"
+ 496               		.file 4 "millisF.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 millisF.c
+     /tmp/cc8uZTPA.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cc8uZTPA.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cc8uZTPA.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cc8uZTPA.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/cc8uZTPA.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cc8uZTPA.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cc8uZTPA.s:13     .text:0000000000000000 secondsV
+     /tmp/cc8uZTPA.s:64     .text:0000000000000026 millis_init
+     /tmp/cc8uZTPA.s:93     .text:000000000000003e millis_get
+                             .bss:0000000000000000 milliseconds
+     /tmp/cc8uZTPA.s:185    .text:000000000000007e millis_resume
+     /tmp/cc8uZTPA.s:214    .text:0000000000000094 millis_pause
+     /tmp/cc8uZTPA.s:243    .text:00000000000000aa millis_reset
+     /tmp/cc8uZTPA.s:302    .text:00000000000000c2 millis_add
+     /tmp/cc8uZTPA.s:375    .text:00000000000000f8 millis_subtract
+     /tmp/cc8uZTPA.s:448    .text:000000000000012e __vector_13
+                            *ABS*:0000000000000003 __gcc_isr.n_pushed.001
+
+UNDEFINED SYMBOLS
+__muluhisi3
+__do_clear_bss

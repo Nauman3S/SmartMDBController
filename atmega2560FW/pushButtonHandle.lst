@@ -1,0 +1,203 @@
+   1               		.file	"pushButtonHandle.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	setupPB
+  13               	setupPB:
+  14               	.LVL0:
+  15               	.LFB0:
+  16               		.file 1 "pushButtonHandle.c"
+   1:pushButtonHandle.c **** //pushButtonHandle.c
+   2:pushButtonHandle.c **** 
+   3:pushButtonHandle.c **** //THIS FILE USES PIN33 for input with interla pullup enabled
+   4:pushButtonHandle.c **** //PC4,PC5 pin 32,33
+   5:pushButtonHandle.c **** #include "pushButtonHandle.h"
+   6:pushButtonHandle.c **** 
+   7:pushButtonHandle.c **** void setupPB(uint8_t pin)
+   8:pushButtonHandle.c **** {
+  17               		.loc 1 8 1 view -0
+  18               		.cfi_startproc
+  19               	/* prologue: function */
+  20               	/* frame size = 0 */
+  21               	/* stack size = 0 */
+  22               	.L__stack_usage = 0
+   9:pushButtonHandle.c ****     if (pin == PIN34)
+  23               		.loc 1 9 5 view .LVU1
+  24               		.loc 1 9 8 is_stmt 0 view .LVU2
+  25 0000 8232      		cpi r24,lo8(34)
+  26 0002 01F4      		brne .L2
+  27               	.L5:
+  10:pushButtonHandle.c ****     {
+  11:pushButtonHandle.c ****         DDRC = 0b00000000;  //input
+  12:pushButtonHandle.c ****         PORTC = 0b11111111; //internal pullup
+  13:pushButtonHandle.c ****     }
+  14:pushButtonHandle.c **** 
+  15:pushButtonHandle.c ****     if (pin == PIN33)
+  16:pushButtonHandle.c ****     {
+  17:pushButtonHandle.c ****         DDRC = 0b00000000;  //input
+  18:pushButtonHandle.c ****         PORTC = 0b11111111; //internal pullup
+  19:pushButtonHandle.c ****     }
+  20:pushButtonHandle.c **** 
+  21:pushButtonHandle.c ****     if (pin == PIN32)
+  22:pushButtonHandle.c ****     {
+  23:pushButtonHandle.c ****         DDRC = 0b00000000;  //input
+  28               		.loc 1 23 9 is_stmt 1 view .LVU3
+  29               		.loc 1 23 14 is_stmt 0 view .LVU4
+  30 0004 17B8      		out 0x7,__zero_reg__
+  24:pushButtonHandle.c ****         PORTC = 0b11111111; //internal pullup
+  31               		.loc 1 24 9 is_stmt 1 view .LVU5
+  32               		.loc 1 24 15 is_stmt 0 view .LVU6
+  33 0006 8FEF      		ldi r24,lo8(-1)
+  34               	.LVL1:
+  35               		.loc 1 24 15 view .LVU7
+  36 0008 88B9      		out 0x8,r24
+  37               	/* epilogue start */
+  25:pushButtonHandle.c ****     }
+  26:pushButtonHandle.c **** }
+  38               		.loc 1 26 1 view .LVU8
+  39 000a 0895      		ret
+  40               	.LVL2:
+  41               	.L2:
+  15:pushButtonHandle.c ****     {
+  42               		.loc 1 15 5 is_stmt 1 view .LVU9
+  15:pushButtonHandle.c ****     {
+  43               		.loc 1 15 8 is_stmt 0 view .LVU10
+  44 000c 8132      		cpi r24,lo8(33)
+  45 000e 01F0      		breq .L5
+  21:pushButtonHandle.c ****     {
+  46               		.loc 1 21 5 is_stmt 1 view .LVU11
+  21:pushButtonHandle.c ****     {
+  47               		.loc 1 21 8 is_stmt 0 view .LVU12
+  48 0010 8032      		cpi r24,lo8(32)
+  49 0012 01F0      		breq .L5
+  50 0014 0895      		ret
+  51               		.cfi_endproc
+  52               	.LFE0:
+  54               	.global	getPBState
+  56               	getPBState:
+  57               	.LVL3:
+  58               	.LFB1:
+  27:pushButtonHandle.c **** 
+  28:pushButtonHandle.c **** uint8_t getPBState(uint8_t pin)
+  29:pushButtonHandle.c **** {
+  59               		.loc 1 29 1 is_stmt 1 view -0
+  60               		.cfi_startproc
+  61               	/* prologue: function */
+  62               	/* frame size = 0 */
+  63               	/* stack size = 0 */
+  64               	.L__stack_usage = 0
+  30:pushButtonHandle.c **** 
+  31:pushButtonHandle.c ****     if (pin == PIN33)
+  65               		.loc 1 31 5 view .LVU14
+  66               		.loc 1 31 8 is_stmt 0 view .LVU15
+  67 0016 8132      		cpi r24,lo8(33)
+  68 0018 01F4      		brne .L7
+  32:pushButtonHandle.c ****     {
+  33:pushButtonHandle.c ****         //send_str_p(UPLINK_USART,PSTR("Switching OFF TX Port\r\n"));
+  34:pushButtonHandle.c ****         if (!(PINC & (1 << PC5)))
+  69               		.loc 1 34 9 is_stmt 1 view .LVU16
+  70               		.loc 1 34 15 is_stmt 0 view .LVU17
+  71 001a 86B1      		in r24,0x6
+  72               	.LVL4:
+  73               		.loc 1 34 12 view .LVU18
+  74 001c 85FB      		bst r24,5
+  75 001e 8827      		clr r24
+  76 0020 80F9      		bld r24,0
+  77               	.L11:
+  35:pushButtonHandle.c ****         {
+  36:pushButtonHandle.c ****             return 1;
+  37:pushButtonHandle.c ****         }
+  38:pushButtonHandle.c ****         else
+  39:pushButtonHandle.c ****         {
+  40:pushButtonHandle.c ****             return 0;
+  41:pushButtonHandle.c ****         }
+  42:pushButtonHandle.c ****     }
+  43:pushButtonHandle.c ****     else if (pin == PIN32)
+  44:pushButtonHandle.c ****     {
+  45:pushButtonHandle.c ****         //send_str_p(UPLINK_USART,PSTR("Switching OFF TX Port\r\n"));
+  46:pushButtonHandle.c ****         if (!(PINC & (1 << PC4)))
+  78               		.loc 1 46 12 view .LVU19
+  79 0022 91E0      		ldi r25,lo8(1)
+  80 0024 8927      		eor r24,r25
+  81 0026 0895      		ret
+  82               	.LVL5:
+  83               	.L7:
+  43:pushButtonHandle.c ****     {
+  84               		.loc 1 43 10 is_stmt 1 view .LVU20
+  43:pushButtonHandle.c ****     {
+  85               		.loc 1 43 13 is_stmt 0 view .LVU21
+  86 0028 8032      		cpi r24,lo8(32)
+  87 002a 01F4      		brne .L9
+  88               		.loc 1 46 9 is_stmt 1 view .LVU22
+  89               		.loc 1 46 15 is_stmt 0 view .LVU23
+  90 002c 86B1      		in r24,0x6
+  91               	.LVL6:
+  92               		.loc 1 46 12 view .LVU24
+  93 002e 8295      		swap r24
+  94 0030 8170      		andi r24,1
+  95 0032 00C0      		rjmp .L11
+  96               	.LVL7:
+  97               	.L9:
+  47:pushButtonHandle.c ****         {
+  48:pushButtonHandle.c ****             return 1;
+  49:pushButtonHandle.c ****         }
+  50:pushButtonHandle.c ****         else
+  51:pushButtonHandle.c ****         {
+  52:pushButtonHandle.c ****             return 0;
+  53:pushButtonHandle.c ****         }
+  54:pushButtonHandle.c ****     }
+  55:pushButtonHandle.c **** 
+  56:pushButtonHandle.c ****     else if (pin == PIN34)
+  98               		.loc 1 56 10 is_stmt 1 view .LVU25
+  99               		.loc 1 56 13 is_stmt 0 view .LVU26
+ 100 0034 8232      		cpi r24,lo8(34)
+ 101 0036 01F4      		brne .L10
+  57:pushButtonHandle.c ****     {
+  58:pushButtonHandle.c ****         //send_str_p(UPLINK_USART,PSTR("Switching OFF TX Port\r\n"));
+  59:pushButtonHandle.c ****         if (!(PINC & (1 << PC3)))
+ 102               		.loc 1 59 9 is_stmt 1 view .LVU27
+ 103               		.loc 1 59 15 is_stmt 0 view .LVU28
+ 104 0038 86B1      		in r24,0x6
+ 105               	.LVL8:
+ 106               		.loc 1 59 12 view .LVU29
+ 107 003a 83FB      		bst r24,3
+ 108 003c 8827      		clr r24
+ 109 003e 80F9      		bld r24,0
+ 110 0040 00C0      		rjmp .L11
+ 111               	.LVL9:
+ 112               	.L10:
+ 113               	.LVL10:
+ 114               	/* epilogue start */
+  60:pushButtonHandle.c ****         {
+  61:pushButtonHandle.c ****             return 1;
+  62:pushButtonHandle.c ****         }
+  63:pushButtonHandle.c ****         else
+  64:pushButtonHandle.c ****         {
+  65:pushButtonHandle.c ****             return 0;
+  66:pushButtonHandle.c ****         }
+  67:pushButtonHandle.c ****     }
+  68:pushButtonHandle.c **** }...
+ 115               		.loc 1 68 1 view .LVU30
+ 116 0042 0895      		ret
+ 117               		.cfi_endproc
+ 118               	.LFE1:
+ 120               	.Letext0:
+ 121               		.file 2 "/usr/avr/include/stdint.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 pushButtonHandle.c
+     /tmp/ccPyOsge.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccPyOsge.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccPyOsge.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccPyOsge.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccPyOsge.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccPyOsge.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccPyOsge.s:13     .text:0000000000000000 setupPB
+     /tmp/ccPyOsge.s:56     .text:0000000000000016 getPBState
+
+NO UNDEFINED SYMBOLS

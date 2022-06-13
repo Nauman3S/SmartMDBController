@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "txswitch.h": "c",
+        "inttypes.h": "c"
+    }
+}

@@ -1,0 +1,81 @@
+   1               		.file	"EEPROMHandle.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	writeDataToEEPROM
+  13               	writeDataToEEPROM:
+  14               	.LVL0:
+  15               	.LFB0:
+  16               		.file 1 "EEPROMHandle.c"
+   1:EEPROMHandle.c **** #include "EEPROMHandle.h"
+   2:EEPROMHandle.c **** 
+   3:EEPROMHandle.c **** uint8_t writeDataToEEPROM(uint8_t ByteOfData)
+   4:EEPROMHandle.c **** {
+  17               		.loc 1 4 1 view -0
+  18               		.cfi_startproc
+  19               	/* prologue: function */
+  20               	/* frame size = 0 */
+  21               	/* stack size = 0 */
+  22               	.L__stack_usage = 0
+  23               		.loc 1 4 1 is_stmt 0 view .LVU1
+  24 0000 682F      		mov r22,r24
+   5:EEPROMHandle.c ****     eeprom_update_byte((uint8_t *)64, ByteOfData);
+  25               		.loc 1 5 5 is_stmt 1 view .LVU2
+  26 0002 80E4      		ldi r24,lo8(64)
+  27 0004 90E0      		ldi r25,0
+  28               	.LVL1:
+  29               		.loc 1 5 5 is_stmt 0 view .LVU3
+  30 0006 0E94 0000 		call eeprom_update_byte
+  31               	.LVL2:
+  32               	/* epilogue start */
+   6:EEPROMHandle.c **** }
+  33               		.loc 1 6 1 view .LVU4
+  34 000a 0895      		ret
+  35               		.cfi_endproc
+  36               	.LFE0:
+  38               	.global	readDataFromEEPROM
+  40               	readDataFromEEPROM:
+  41               	.LFB1:
+   7:EEPROMHandle.c **** 
+   8:EEPROMHandle.c **** uint8_t readDataFromEEPROM()
+   9:EEPROMHandle.c **** {
+  42               		.loc 1 9 1 is_stmt 1 view -0
+  43               		.cfi_startproc
+  44               	/* prologue: function */
+  45               	/* frame size = 0 */
+  46               	/* stack size = 0 */
+  47               	.L__stack_usage = 0
+  10:EEPROMHandle.c ****     uint8_t value;
+  48               		.loc 1 10 5 view .LVU6
+  11:EEPROMHandle.c ****     value = eeprom_read_byte((const uint8_t *)64);
+  49               		.loc 1 11 5 view .LVU7
+  50               		.loc 1 11 13 is_stmt 0 view .LVU8
+  51 000c 80E4      		ldi r24,lo8(64)
+  52 000e 90E0      		ldi r25,0
+  53 0010 0C94 0000 		jmp eeprom_read_byte
+  54               	.LVL3:
+  55               		.cfi_endproc
+  56               	.LFE1:
+  58               	.Letext0:
+  59               		.file 2 "/usr/avr/include/stdint.h"
+  60               		.file 3 "/usr/avr/include/avr/eeprom.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 EEPROMHandle.c
+     /tmp/ccUiUlg3.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccUiUlg3.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccUiUlg3.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccUiUlg3.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccUiUlg3.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccUiUlg3.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccUiUlg3.s:13     .text:0000000000000000 writeDataToEEPROM
+     /tmp/ccUiUlg3.s:40     .text:000000000000000c readDataFromEEPROM
+
+UNDEFINED SYMBOLS
+eeprom_update_byte
+eeprom_read_byte

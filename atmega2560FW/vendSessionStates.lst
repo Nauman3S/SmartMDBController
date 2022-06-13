@@ -1,0 +1,276 @@
+   1               		.file	"vendSessionStates.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	saveVendState
+  13               	saveVendState:
+  14               	.LVL0:
+  15               	.LFB1:
+  16               		.file 1 "vendSessionStates.c"
+   1:vendSessionStates.c **** //vendSessionStates
+   2:vendSessionStates.c **** #include "vendSessionStates.h"
+   3:vendSessionStates.c **** 
+   4:vendSessionStates.c **** volatile uint8_t vendStateT = 0;
+   5:vendSessionStates.c **** 
+   6:vendSessionStates.c **** void saveVendState(uint8_t state)
+   7:vendSessionStates.c **** {
+  17               		.loc 1 7 1 view -0
+  18               		.cfi_startproc
+  19               		.loc 1 7 1 is_stmt 0 view .LVU1
+  20 0000 CF93      		push r28
+  21               	.LCFI0:
+  22               		.cfi_def_cfa_offset 4
+  23               		.cfi_offset 28, -3
+  24               	/* prologue: function */
+  25               	/* frame size = 0 */
+  26               	/* stack size = 1 */
+  27               	.L__stack_usage = 1
+  28 0002 C82F      		mov r28,r24
+   8:vendSessionStates.c **** 
+   9:vendSessionStates.c ****     if (state == VEND_SUCCESS_FLAG)
+  29               		.loc 1 9 5 is_stmt 1 view .LVU2
+  10:vendSessionStates.c ****     {
+  11:vendSessionStates.c ****         writeDataToEEPROM(VEND_SUCCESS_FLAG);
+  30               		.loc 1 11 9 is_stmt 0 view .LVU3
+  31 0004 81E0      		ldi r24,lo8(1)
+  32               	.LVL1:
+   9:vendSessionStates.c ****     {
+  33               		.loc 1 9 8 view .LVU4
+  34 0006 C130      		cpi r28,lo8(1)
+  35 0008 01F0      		breq .L5
+  12:vendSessionStates.c ****         vendStateT = 1;
+  13:vendSessionStates.c ****     }
+  14:vendSessionStates.c ****     else if (state == VEND_FAILURE_FLAG)
+  36               		.loc 1 14 10 is_stmt 1 view .LVU5
+  37               		.loc 1 14 13 is_stmt 0 view .LVU6
+  38 000a C230      		cpi r28,lo8(2)
+  39 000c 01F4      		brne .L4
+  15:vendSessionStates.c ****     {
+  16:vendSessionStates.c ****         writeDataToEEPROM(VEND_FAILURE_FLAG);
+  40               		.loc 1 16 9 is_stmt 1 view .LVU7
+  41 000e 82E0      		ldi r24,lo8(2)
+  42               	.L5:
+  43 0010 0E94 0000 		call writeDataToEEPROM
+  44               	.LVL2:
+  17:vendSessionStates.c ****         vendStateT = 2;
+  45               		.loc 1 17 9 view .LVU8
+  46               		.loc 1 17 20 is_stmt 0 view .LVU9
+  47 0014 C093 0000 		sts vendStateT,r28
+  48               	.L1:
+  49               	/* epilogue start */
+  18:vendSessionStates.c ****     }
+  19:vendSessionStates.c ****     else if (state == VEND_DEFAULT)
+  20:vendSessionStates.c ****     {
+  21:vendSessionStates.c ****         writeDataToEEPROM(VEND_DEFAULT);
+  22:vendSessionStates.c ****         vendStateT = 0;
+  23:vendSessionStates.c ****     }
+  24:vendSessionStates.c **** }
+  50               		.loc 1 24 1 view .LVU10
+  51 0018 CF91      		pop r28
+  52               	.LVL3:
+  53               		.loc 1 24 1 view .LVU11
+  54 001a 0895      		ret
+  55               	.LVL4:
+  56               	.L4:
+  19:vendSessionStates.c ****     {
+  57               		.loc 1 19 10 is_stmt 1 view .LVU12
+  19:vendSessionStates.c ****     {
+  58               		.loc 1 19 13 is_stmt 0 view .LVU13
+  59 001c C111      		cpse r28,__zero_reg__
+  60 001e 00C0      		rjmp .L1
+  21:vendSessionStates.c ****         vendStateT = 0;
+  61               		.loc 1 21 9 is_stmt 1 view .LVU14
+  62 0020 80E0      		ldi r24,0
+  63 0022 0E94 0000 		call writeDataToEEPROM
+  64               	.LVL5:
+  22:vendSessionStates.c ****     }
+  65               		.loc 1 22 9 view .LVU15
+  22:vendSessionStates.c ****     }
+  66               		.loc 1 22 20 is_stmt 0 view .LVU16
+  67 0026 1092 0000 		sts vendStateT,__zero_reg__
+  68               		.loc 1 24 1 view .LVU17
+  69 002a 00C0      		rjmp .L1
+  70               		.cfi_endproc
+  71               	.LFE1:
+  73               	.global	getLastVendState
+  75               	getLastVendState:
+  76               	.LFB2:
+  25:vendSessionStates.c **** uint8_t getLastVendState()
+  26:vendSessionStates.c **** {
+  77               		.loc 1 26 1 is_stmt 1 view -0
+  78               		.cfi_startproc
+  79               	/* prologue: function */
+  80               	/* frame size = 0 */
+  81               	/* stack size = 0 */
+  82               	.L__stack_usage = 0
+  27:vendSessionStates.c ****     //return vendStateT;
+  28:vendSessionStates.c ****     return readDataFromEEPROM();
+  83               		.loc 1 28 5 view .LVU19
+  84               		.loc 1 28 12 is_stmt 0 view .LVU20
+  85 002c 0C94 0000 		jmp readDataFromEEPROM
+  86               	.LVL6:
+  87               		.cfi_endproc
+  88               	.LFE2:
+  90               	.global	clearLastVendState
+  92               	clearLastVendState:
+  93               	.LFB3:
+  29:vendSessionStates.c **** }
+  30:vendSessionStates.c **** void clearLastVendState()
+  31:vendSessionStates.c **** {
+  94               		.loc 1 31 1 is_stmt 1 view -0
+  95               		.cfi_startproc
+  96               	/* prologue: function */
+  97               	/* frame size = 0 */
+  98               	/* stack size = 0 */
+  99               	.L__stack_usage = 0
+  32:vendSessionStates.c ****     writeDataToEEPROM(VEND_DEFAULT);
+ 100               		.loc 1 32 5 view .LVU22
+ 101 0030 80E0      		ldi r24,0
+ 102 0032 0E94 0000 		call writeDataToEEPROM
+ 103               	.LVL7:
+  33:vendSessionStates.c ****     vendStateT = 0;
+ 104               		.loc 1 33 5 view .LVU23
+ 105               		.loc 1 33 16 is_stmt 0 view .LVU24
+ 106 0036 1092 0000 		sts vendStateT,__zero_reg__
+ 107               	/* epilogue start */
+  34:vendSessionStates.c **** }
+ 108               		.loc 1 34 1 view .LVU25
+ 109 003a 0895      		ret
+ 110               		.cfi_endproc
+ 111               	.LFE3:
+ 113               	.global	statesCheckStartup
+ 115               	statesCheckStartup:
+ 116               	.LFB4:
+  35:vendSessionStates.c **** 
+  36:vendSessionStates.c **** void statesCheckStartup()
+  37:vendSessionStates.c **** {
+ 117               		.loc 1 37 1 is_stmt 1 view -0
+ 118               		.cfi_startproc
+ 119               	/* prologue: function */
+ 120               	/* frame size = 0 */
+ 121               	/* stack size = 0 */
+ 122               	.L__stack_usage = 0
+  38:vendSessionStates.c ****     //writeDataToEEPROM();
+  39:vendSessionStates.c **** 
+  40:vendSessionStates.c ****     vendStateT = 0; //getLastVendState();
+ 123               		.loc 1 40 5 view .LVU27
+ 124               		.loc 1 40 16 is_stmt 0 view .LVU28
+ 125 003c 1092 0000 		sts vendStateT,__zero_reg__
+  41:vendSessionStates.c **** 
+  42:vendSessionStates.c ****     if (vendStateT == 0)
+ 126               		.loc 1 42 5 is_stmt 1 view .LVU29
+ 127               		.loc 1 42 20 is_stmt 0 view .LVU30
+ 128 0040 8091 0000 		lds r24,vendStateT
+  43:vendSessionStates.c ****     {
+  44:vendSessionStates.c ****         send_str_p(0, PSTR("LAST state was 0\r\n"));
+ 129               		.loc 1 44 9 view .LVU31
+ 130 0044 60E0      		ldi r22,lo8(__c.2)
+ 131 0046 70E0      		ldi r23,hi8(__c.2)
+  42:vendSessionStates.c ****     {
+ 132               		.loc 1 42 8 view .LVU32
+ 133 0048 8823      		tst r24
+ 134 004a 01F0      		breq .L12
+  45:vendSessionStates.c ****     }
+  46:vendSessionStates.c ****     else if (vendStateT == 1)
+ 135               		.loc 1 46 10 is_stmt 1 view .LVU33
+ 136               		.loc 1 46 25 is_stmt 0 view .LVU34
+ 137 004c 8091 0000 		lds r24,vendStateT
+  47:vendSessionStates.c ****     {
+  48:vendSessionStates.c **** 
+  49:vendSessionStates.c ****         send_str_p(UPLINK_USART, PSTR("VEND SESSION COMPLETE\r\n"));
+ 138               		.loc 1 49 9 view .LVU35
+ 139 0050 60E0      		ldi r22,lo8(__c.1)
+ 140 0052 70E0      		ldi r23,hi8(__c.1)
+  46:vendSessionStates.c ****     {
+ 141               		.loc 1 46 13 view .LVU36
+ 142 0054 8130      		cpi r24,lo8(1)
+ 143 0056 01F0      		breq .L13
+  50:vendSessionStates.c ****     }
+  51:vendSessionStates.c ****     else if (vendStateT == 2)
+ 144               		.loc 1 51 10 is_stmt 1 view .LVU37
+ 145               		.loc 1 51 25 is_stmt 0 view .LVU38
+ 146 0058 8091 0000 		lds r24,vendStateT
+ 147               		.loc 1 51 13 view .LVU39
+ 148 005c 8230      		cpi r24,lo8(2)
+ 149 005e 01F4      		brne .L8
+  52:vendSessionStates.c ****     {
+  53:vendSessionStates.c **** 
+  54:vendSessionStates.c ****         send_str_p(0, PSTR("LAST state was Failed\r\n"));
+ 150               		.loc 1 54 9 is_stmt 1 view .LVU40
+ 151               	.LBB2:
+ 152               		.loc 1 54 23 view .LVU41
+ 153               		.loc 1 54 23 view .LVU42
+ 154               	.LBE2:
+ 155               		.loc 1 54 9 is_stmt 0 view .LVU43
+ 156 0060 60E0      		ldi r22,lo8(__c.0)
+ 157 0062 70E0      		ldi r23,hi8(__c.0)
+ 158               	.L13:
+ 159 0064 80E0      		ldi r24,0
+ 160               	.L12:
+ 161 0066 0C94 0000 		jmp send_str_p
+ 162               	.LVL8:
+ 163               	.L8:
+ 164               	/* epilogue start */
+  55:vendSessionStates.c ****     }
+  56:vendSessionStates.c **** }...
+ 165               		.loc 1 56 1 view .LVU44
+ 166 006a 0895      		ret
+ 167               		.cfi_endproc
+ 168               	.LFE4:
+ 170               		.section	.progmem.data,"a",@progbits
+ 173               	__c.0:
+ 174 0000 4C41 5354 		.string	"LAST state was Failed\r\n"
+ 174      2073 7461 
+ 174      7465 2077 
+ 174      6173 2046 
+ 174      6169 6C65 
+ 177               	__c.1:
+ 178 0018 5645 4E44 		.string	"VEND SESSION COMPLETE\r\n"
+ 178      2053 4553 
+ 178      5349 4F4E 
+ 178      2043 4F4D 
+ 178      504C 4554 
+ 181               	__c.2:
+ 182 0030 4C41 5354 		.string	"LAST state was 0\r\n"
+ 182      2073 7461 
+ 182      7465 2077 
+ 182      6173 2030 
+ 182      0D0A 00
+ 183               	.global	vendStateT
+ 184               		.section .bss
+ 187               	vendStateT:
+ 188 0000 00        		.zero	1
+ 189               		.text
+ 190               	.Letext0:
+ 191               		.file 2 "usart.h"
+ 192               		.file 3 "EEPROMHandle.h"
+ 193               		.file 4 "/usr/avr/include/stdint.h"
+ 194               		.file 5 "vendSessionStates.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 vendSessionStates.c
+     /tmp/ccKgfZHQ.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccKgfZHQ.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccKgfZHQ.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccKgfZHQ.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccKgfZHQ.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccKgfZHQ.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccKgfZHQ.s:13     .text:0000000000000000 saveVendState
+     /tmp/ccKgfZHQ.s:187    .bss:0000000000000000 vendStateT
+     /tmp/ccKgfZHQ.s:75     .text:000000000000002c getLastVendState
+     /tmp/ccKgfZHQ.s:92     .text:0000000000000030 clearLastVendState
+     /tmp/ccKgfZHQ.s:115    .text:000000000000003c statesCheckStartup
+     /tmp/ccKgfZHQ.s:181    .progmem.data:0000000000000030 __c.2
+     /tmp/ccKgfZHQ.s:177    .progmem.data:0000000000000018 __c.1
+     /tmp/ccKgfZHQ.s:173    .progmem.data:0000000000000000 __c.0
+
+UNDEFINED SYMBOLS
+writeDataToEEPROM
+readDataFromEEPROM
+send_str_p
+__do_clear_bss

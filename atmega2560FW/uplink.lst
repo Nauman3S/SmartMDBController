@@ -1,0 +1,3482 @@
+   1               		.file	"uplink.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	cmd_reset
+  13               	cmd_reset:
+  14               	.LVL0:
+  15               	.LFB14:
+  16               		.file 1 "uplink.c"
+   1:uplink.c      **** 
+   2:uplink.c      **** 
+   3:uplink.c      **** #ifndef F_CPU
+   4:uplink.c      **** #define F_CPU 16000000UL
+   5:uplink.c      **** #endif
+   6:uplink.c      **** 
+   7:uplink.c      **** #include <avr/io.h>
+   8:uplink.c      **** #include <inttypes.h>
+   9:uplink.c      **** #include <avr/eeprom.h>
+  10:uplink.c      **** #include <avr/pgmspace.h>
+  11:uplink.c      **** #include <stdlib.h>
+  12:uplink.c      **** #include <stdio.h>
+  13:uplink.c      **** #include <string.h>
+  14:uplink.c      **** #include "usart.h"
+  15:uplink.c      **** #include "mdb.h"
+  16:uplink.c      **** #include "uplink.h"
+  17:uplink.c      **** #include "txSwitch.h"
+  18:uplink.c      **** #include "vendSessionStates.h"
+  19:uplink.c      **** #include <util/delay.h>
+  20:uplink.c      **** //#include <util/delay.h>
+  21:uplink.c      **** 
+  22:uplink.c      **** uint8_t timerVal = 0;
+  23:uplink.c      **** uint8_t timerPassV = 0;
+  24:uplink.c      **** uint8_t processComplete = 0;
+  25:uplink.c      **** uint8_t paymentMethod = 0; //0==easytickets; 1==jazzcash; 2==simsim
+  26:uplink.c      **** 
+  27:uplink.c      **** char *vendValue;
+  28:uplink.c      **** cmdStruct_t CMD_LIST[] = {
+  29:uplink.c      ****     {"reset", cmd_reset},
+  30:uplink.c      ****     {"help", cmd_help},
+  31:uplink.c      ****     {"info", cmd_info},
+  32:uplink.c      ****     {"mdb-state", cmd_get_mdb_state},
+  33:uplink.c      ****     {"start-session", cmd_start_session},
+  34:uplink.c      ****     {"approve-vend", cmd_approve_vend},
+  35:uplink.c      ****     {"deny-vend", cmd_deny_vend},
+  36:uplink.c      ****     {"cancel-session", cmd_cancel_session},
+  37:uplink.c      ****     {"io", cmd_io},
+  38:uplink.c      ****     {"invokevend", vendInvoker},
+  39:uplink.c      ****     /*
+  40:uplink.c      ****     {"read",cmd_read},
+  41:uplink.c      ****     {"write",cmd_write},*/
+  42:uplink.c      ****     {NULL, NULL}};
+  43:uplink.c      **** 
+  44:uplink.c      **** extern uint8_t mdb_state;
+  45:uplink.c      **** extern uint8_t mdb_poll_reply;
+  46:uplink.c      **** extern vmcCfg_t vmc;
+  47:uplink.c      **** extern vmcPrice_t price;
+  48:uplink.c      **** extern mdbSession_t session;
+  49:uplink.c      **** 
+  50:uplink.c      **** char buff[20];
+  51:uplink.c      **** 
+  52:uplink.c      **** //uint8_t eeByte EEMEM;
+  53:uplink.c      **** 
+  54:uplink.c      **** void uplink_cmd_handler(void)
+  55:uplink.c      **** {
+  56:uplink.c      **** 
+  57:uplink.c      ****     static char cmd[20];
+  58:uplink.c      ****     static uint8_t index = 0;
+  59:uplink.c      **** 
+  60:uplink.c      ****     // No data received, return
+  61:uplink.c      ****     if (buffer_level(UPLINK_USART, RX) < 1)
+  62:uplink.c      ****         return;
+  63:uplink.c      **** 
+  64:uplink.c      ****     // flush cmd buffer if cmd is out of a valid length
+  65:uplink.c      ****     if (index == MAX_CMD_LENGTH)
+  66:uplink.c      ****     {
+  67:uplink.c      ****         index = 0;
+  68:uplink.c      ****     }
+  69:uplink.c      **** 
+  70:uplink.c      ****     // append char to cmd
+  71:uplink.c      ****     recv_char(UPLINK_USART, &cmd[index]);
+  72:uplink.c      **** 
+  73:uplink.c      ****     switch (cmd[index])
+  74:uplink.c      ****     {
+  75:uplink.c      ****     case '\r':
+  76:uplink.c      ****         //carriage return received, replace with stringtermination and parse
+  77:uplink.c      ****         send_str(UPLINK_USART, "\r\n");
+  78:uplink.c      ****         cmd[index] = '\0';
+  79:uplink.c      ****         parse_cmd(cmd);
+  80:uplink.c      ****         index = 0;
+  81:uplink.c      ****         break;
+  82:uplink.c      ****     case '\n':
+  83:uplink.c      ****         // do nothing, but avoid index from incrementing
+  84:uplink.c      ****         break;
+  85:uplink.c      ****     case '\b':
+  86:uplink.c      ****         // backspace, remove last received char
+  87:uplink.c      ****         index--;
+  88:uplink.c      ****         send_char(UPLINK_USART, '\b');
+  89:uplink.c      ****         break;
+  90:uplink.c      ****         // char is part of an ESC sequence
+  91:uplink.c      ****     case 0x1B:
+  92:uplink.c      ****     case 0x5B:
+  93:uplink.c      ****         index++;
+  94:uplink.c      ****         break;
+  95:uplink.c      ****         // each other if the last two char was not part of an ESC sequence
+  96:uplink.c      ****     default:
+  97:uplink.c      ****         if (cmd[index - 1] == 0x5B && cmd[index - 2] == 0x1B)
+  98:uplink.c      ****         {
+  99:uplink.c      ****             index = index - 2;
+ 100:uplink.c      ****         }
+ 101:uplink.c      ****         else
+ 102:uplink.c      ****         {
+ 103:uplink.c      ****             send_char(UPLINK_USART, cmd[index]);
+ 104:uplink.c      ****             index++;
+ 105:uplink.c      ****         }
+ 106:uplink.c      ****     }
+ 107:uplink.c      **** }
+ 108:uplink.c      **** 
+ 109:uplink.c      **** void parse_cmd(char *cmd)
+ 110:uplink.c      **** {
+ 111:uplink.c      **** 
+ 112:uplink.c      ****     char *tmp;
+ 113:uplink.c      ****     uint8_t index = 0;
+ 114:uplink.c      **** 
+ 115:uplink.c      ****     // seperate command from arguments
+ 116:uplink.c      ****     tmp = strsep(&cmd, " ");
+ 117:uplink.c      ****     //send_str_p(UPLINK_USART,PSTR("PARSE_CMD00\r\n"));
+ 118:uplink.c      ****     // search in command list for the command
+ 119:uplink.c      ****     while (strcasecmp(CMD_LIST[index].cmd, tmp))
+ 120:uplink.c      ****     {
+ 121:uplink.c      ****         if (CMD_LIST[index + 1].cmd == NULL)
+ 122:uplink.c      ****         {
+ 123:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("Error: Unknown command\r\n"));
+ 124:uplink.c      ****             return;
+ 125:uplink.c      ****         }
+ 126:uplink.c      ****         index++;
+ 127:uplink.c      ****     }
+ 128:uplink.c      **** 
+ 129:uplink.c      ****     // run the command
+ 130:uplink.c      ****     CMD_LIST[index].funcptr(cmd);
+ 131:uplink.c      ****     return;
+ 132:uplink.c      **** }
+ 133:uplink.c      **** 
+ 134:uplink.c      **** void cmd_reset(char *arg)
+ 135:uplink.c      **** {
+  17               		.loc 1 135 1 view -0
+  18               		.cfi_startproc
+  19               	/* prologue: function */
+  20               	/* frame size = 0 */
+  21               	/* stack size = 0 */
+  22               	.L__stack_usage = 0
+ 136:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("@RESETTING DEVICE*\r\n"));
+  23               		.loc 1 136 5 view .LVU1
+  24               	.LBB18:
+  25               		.loc 1 136 30 view .LVU2
+  26               		.loc 1 136 30 view .LVU3
+  27               	.LBE18:
+  28               		.loc 1 136 5 is_stmt 0 view .LVU4
+  29 0000 60E0      		ldi r22,lo8(__c.33)
+  30 0002 70E0      		ldi r23,hi8(__c.33)
+  31 0004 80E0      		ldi r24,0
+  32               	.LVL1:
+  33               		.loc 1 136 5 view .LVU5
+  34 0006 0E94 0000 		call send_str_p
+  35               	.LVL2:
+ 137:uplink.c      ****     RESET();
+  36               		.loc 1 137 5 is_stmt 1 view .LVU6
+  37               	/* #APP */
+  38               	 ;  137 "uplink.c" 1
+  39 000a E0E0      		ldi r30,0
+  40               	 ;  0 "" 2
+  41               		.loc 1 137 5 view .LVU7
+  42               	 ;  137 "uplink.c" 1
+  43 000c F0E0      		ldi r31,0
+  44               	 ;  0 "" 2
+  45               		.loc 1 137 5 view .LVU8
+  46               	 ;  137 "uplink.c" 1
+  47 000e 0994      		ijmp
+  48               	 ;  0 "" 2
+  49               		.loc 1 137 12 view .LVU9
+  50               	/* #NOAPP */
+  51               	/* epilogue start */
+ 138:uplink.c      **** }
+  52               		.loc 1 138 1 is_stmt 0 view .LVU10
+  53 0010 0895      		ret
+  54               		.cfi_endproc
+  55               	.LFE14:
+  57               	.global	cmd_help
+  59               	cmd_help:
+  60               	.LVL3:
+  61               	.LFB25:
+ 139:uplink.c      **** 
+ 140:uplink.c      **** void cmd_io(char *arg)
+ 141:uplink.c      **** {
+ 142:uplink.c      ****     //uint16_t sizeStr=strlen(arg);
+ 143:uplink.c      **** 
+ 144:uplink.c      ****     uint16_t argV = atoi(arg);
+ 145:uplink.c      ****     uint16_t pinNumber = atoi(arg) / 100;
+ 146:uplink.c      ****     uint16_t pinState = atoi(arg) % 100;
+ 147:uplink.c      **** 
+ 148:uplink.c      ****     /*
+ 149:uplink.c      ****    working snippet
+ 150:uplink.c      ****     playerBegin();
+ 151:uplink.c      ****     volume(30);
+ 152:uplink.c      ****      play(1);*/
+ 153:uplink.c      **** 
+ 154:uplink.c      ****     ///format io 1200 to turn 12th pin off
+ 155:uplink.c      ****     ///////   io 1201 to turn 12th pin on
+ 156:uplink.c      **** 
+ 157:uplink.c      ****     /* if(argV==0){
+ 158:uplink.c      ****    saveVendState(VEND_DEFAULT);    
+ 159:uplink.c      ****        
+ 160:uplink.c      ****    }
+ 161:uplink.c      ****    else if(argV==1){
+ 162:uplink.c      ****        saveVendState(VEND_SUCCESS_FLAG);
+ 163:uplink.c      ****        
+ 164:uplink.c      ****    }
+ 165:uplink.c      ****    else if(argV==2){
+ 166:uplink.c      ****        saveVendState(VEND_FAILURE_FLAG);
+ 167:uplink.c      ****    } */
+ 168:uplink.c      ****     if (pinNumber == 12)
+ 169:uplink.c      ****     {
+ 170:uplink.c      ****         if (pinState == 0)
+ 171:uplink.c      ****         {
+ 172:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@IO: PIN12 OFF*\r\n"));
+ 173:uplink.c      **** 
+ 174:uplink.c      ****             PORTB = PIN12_OFF;
+ 175:uplink.c      ****         }
+ 176:uplink.c      ****         else if (pinState == 1)
+ 177:uplink.c      ****         {
+ 178:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@PO: PIN12 ON*\r\n"));
+ 179:uplink.c      **** 
+ 180:uplink.c      ****             PORTB = PIN12_ON;
+ 181:uplink.c      ****         }
+ 182:uplink.c      ****         else if (pinState == 2)
+ 183:uplink.c      ****         {
+ 184:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@IO: PLAY3*\r\n"));
+ 185:uplink.c      ****         }
+ 186:uplink.c      ****         else if (pinState == 3)
+ 187:uplink.c      ****         {
+ 188:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@IO: PLAY4*\r\n"));
+ 189:uplink.c      ****         }
+ 190:uplink.c      ****     }
+ 191:uplink.c      **** }
+ 192:uplink.c      **** void startTimer()
+ 193:uplink.c      **** {
+ 194:uplink.c      ****     timerVal = 1;
+ 195:uplink.c      **** }
+ 196:uplink.c      **** void stopTimer()
+ 197:uplink.c      **** {
+ 198:uplink.c      ****     timerVal = 0;
+ 199:uplink.c      **** 
+ 200:uplink.c      ****     timerPassV = 0;
+ 201:uplink.c      ****     vendValue = "0";
+ 202:uplink.c      **** }
+ 203:uplink.c      **** uint8_t getTimerState()
+ 204:uplink.c      **** {
+ 205:uplink.c      ****     return timerVal;
+ 206:uplink.c      **** }
+ 207:uplink.c      **** void incrementTimerPass()
+ 208:uplink.c      **** {
+ 209:uplink.c      **** 
+ 210:uplink.c      ****     timerPassV = timerPassV + 1;
+ 211:uplink.c      **** }
+ 212:uplink.c      **** uint8_t getTimerPass()
+ 213:uplink.c      **** {
+ 214:uplink.c      **** 
+ 215:uplink.c      ****     return timerPassV;
+ 216:uplink.c      **** }
+ 217:uplink.c      **** void liveVendMonitor()
+ 218:uplink.c      **** {
+ 219:uplink.c      ****     //not needed yet
+ 220:uplink.c      **** }
+ 221:uplink.c      **** void resetDevice()
+ 222:uplink.c      **** {
+ 223:uplink.c      ****     stopTimer();
+ 224:uplink.c      ****     RESET();
+ 225:uplink.c      **** }
+ 226:uplink.c      **** 
+ 227:uplink.c      **** void timeHandler(uint8_t v)
+ 228:uplink.c      **** {
+ 229:uplink.c      **** 
+ 230:uplink.c      ****     if (v == 0)
+ 231:uplink.c      ****     {
+ 232:uplink.c      **** 
+ 233:uplink.c      ****         // First Time Play the payment accepted from easytickets
+ 234:uplink.c      ****         // And Start Session
+ 235:uplink.c      ****         if (paymentMethod == 1)
+ 236:uplink.c      ****         {
+ 237:uplink.c      ****             //payment accepted
+ 238:uplink.c      ****         }
+ 239:uplink.c      ****         else if (paymentMethod == 2)
+ 240:uplink.c      ****         {
+ 241:uplink.c      ****             //payment accepted
+ 242:uplink.c      ****         }
+ 243:uplink.c      ****         else if (paymentMethod == 3)
+ 244:uplink.c      ****         {
+ 245:uplink.c      ****             //payment accepted
+ 246:uplink.c      ****         }
+ 247:uplink.c      ****         cmd_start_session(vendValue);
+ 248:uplink.c      ****     }
+ 249:uplink.c      **** 
+ 250:uplink.c      ****     if (v == 3)
+ 251:uplink.c      ****     {
+ 252:uplink.c      ****         // At this State we Assume that the user has already made selection
+ 253:uplink.c      ****         // Before the Payment
+ 254:uplink.c      ****         cmd_approve_vend(vendValue);
+ 255:uplink.c      ****     }
+ 256:uplink.c      **** 
+ 257:uplink.c      ****     if (v == 9)
+ 258:uplink.c      ****     {
+ 259:uplink.c      **** 
+ 260:uplink.c      ****         // Lets Check the State
+ 261:uplink.c      ****         if (vendStateT == 1)
+ 262:uplink.c      ****         {
+ 263:uplink.c      **** 
+ 264:uplink.c      ****             //Success Case
+ 265:uplink.c      **** 
+ 266:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@vend-success*\r\n"));
+ 267:uplink.c      ****         }
+ 268:uplink.c      ****         else
+ 269:uplink.c      ****         {
+ 270:uplink.c      **** 
+ 271:uplink.c      ****             // Failed Case So play Please Select the Column
+ 272:uplink.c      ****             // And Wait for 20 Sec again
+ 273:uplink.c      ****         }
+ 274:uplink.c      ****     }
+ 275:uplink.c      **** 
+ 276:uplink.c      ****     if (v == 12)
+ 277:uplink.c      ****     {
+ 278:uplink.c      ****         if (vendStateT == 1)
+ 279:uplink.c      ****         {
+ 280:uplink.c      ****             resetDevice();
+ 281:uplink.c      ****         }
+ 282:uplink.c      ****     }
+ 283:uplink.c      **** 
+ 284:uplink.c      ****     ////////////////////////////////////////Case2//////////////////////////////////
+ 285:uplink.c      **** 
+ 286:uplink.c      ****     if (v == 15)
+ 287:uplink.c      ****     {
+ 288:uplink.c      ****         //please wait
+ 289:uplink.c      ****     }
+ 290:uplink.c      **** 
+ 291:uplink.c      ****     if (v == 19)
+ 292:uplink.c      ****     {
+ 293:uplink.c      ****         //please wait
+ 294:uplink.c      ****     }
+ 295:uplink.c      **** 
+ 296:uplink.c      ****     if (v == 23)
+ 297:uplink.c      ****     {
+ 298:uplink.c      ****         //please wait
+ 299:uplink.c      ****     }
+ 300:uplink.c      **** 
+ 301:uplink.c      ****     if (v == 27)
+ 302:uplink.c      ****     {
+ 303:uplink.c      **** 
+ 304:uplink.c      ****         // At this point we assume that the user has made some Selection
+ 305:uplink.c      ****         // So we just Appove the vend and see in v==9 wether the vend is
+ 306:uplink.c      ****         // success or not
+ 307:uplink.c      **** 
+ 308:uplink.c      ****         cmd_approve_vend(vendValue);
+ 309:uplink.c      ****     }
+ 310:uplink.c      **** 
+ 311:uplink.c      ****     if (v == 31)
+ 312:uplink.c      ****     {
+ 313:uplink.c      ****         //please wait
+ 314:uplink.c      ****     }
+ 315:uplink.c      **** 
+ 316:uplink.c      ****     if (v == 33)
+ 317:uplink.c      ****     {
+ 318:uplink.c      **** 
+ 319:uplink.c      ****         // lets check the state
+ 320:uplink.c      **** 
+ 321:uplink.c      ****         if (vendStateT == 1)
+ 322:uplink.c      ****         {
+ 323:uplink.c      **** 
+ 324:uplink.c      ****             // Success Case
+ 325:uplink.c      **** 
+ 326:uplink.c      ****             //success
+ 327:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@vend-success*\r\n"));
+ 328:uplink.c      ****             //_delay_ms(3000);
+ 329:uplink.c      ****             //resetDevice();
+ 330:uplink.c      ****         }
+ 331:uplink.c      ****         else
+ 332:uplink.c      ****         {
+ 333:uplink.c      **** 
+ 334:uplink.c      ****             // Denied case
+ 335:uplink.c      **** 
+ 336:uplink.c      ****             //denied
+ 337:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("@vend-failed*\r\n"));
+ 338:uplink.c      ****             //_delay_ms(3000);
+ 339:uplink.c      ****             //resetDevice();
+ 340:uplink.c      ****         }
+ 341:uplink.c      ****     }
+ 342:uplink.c      **** 
+ 343:uplink.c      ****     if (v == 38)
+ 344:uplink.c      ****     {
+ 345:uplink.c      ****         resetDevice();
+ 346:uplink.c      ****     }
+ 347:uplink.c      **** 
+ 348:uplink.c      ****     if (v == 42)
+ 349:uplink.c      ****     {
+ 350:uplink.c      ****         resetDevice(); //second reset try if first try didn't worked
+ 351:uplink.c      ****     }
+ 352:uplink.c      **** 
+ 353:uplink.c      ****     incrementTimerPass();
+ 354:uplink.c      **** }
+ 355:uplink.c      **** 
+ 356:uplink.c      **** /* void timeHandler(uint8_t v){
+ 357:uplink.c      ****     //  char buf[40];
+ 358:uplink.c      ****     
+ 359:uplink.c      ****     
+ 360:uplink.c      ****     if(v==0){
+ 361:uplink.c      ****         //SoundPlayerWakeUp();
+ 362:uplink.c      ****     
+ 363:uplink.c      ****     
+ 364:uplink.c      ****     play(1);//payment-accepted-from1582628071.mp3
+ 365:uplink.c      ****     
+ 366:uplink.c      ****     cmd_start_session(vendValue);
+ 367:uplink.c      ****    
+ 368:uplink.c      ****   
+ 369:uplink.c      ****     //send_str_p(UPLINK_USART, PSTR("###VENDINVOKED-R RUNNING###\r\n"));
+ 370:uplink.c      ****     }
+ 371:uplink.c      ****     if(v==1){
+ 372:uplink.c      ****         cmd_approve_vend(vendValue);   
+ 373:uplink.c      **** 
+ 374:uplink.c      ****     }
+ 375:uplink.c      **** 
+ 376:uplink.c      ****      if(v==2){
+ 377:uplink.c      ****         if(vendStateT==1){
+ 378:uplink.c      ****              play(3);//vend-successful-please-collect-your1582628159.mp3
+ 379:uplink.c      ****              //_delay_ms(3000);
+ 380:uplink.c      ****             //clearLastVendState();
+ 381:uplink.c      ****             //success
+ 382:uplink.c      ****            // stopTimer;
+ 383:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("###VENDINVOKED-S SUCCESS###\r\n"));
+ 384:uplink.c      ****             //RESET();
+ 385:uplink.c      ****             //return;
+ 386:uplink.c      **** 
+ 387:uplink.c      ****         }
+ 388:uplink.c      ****         else{
+ 389:uplink.c      ****             //play(2);//please select
+ 390:uplink.c      ****             //_delay_ms(3000);
+ 391:uplink.c      ****             //RESET();
+ 392:uplink.c      ****         }
+ 393:uplink.c      ****        
+ 394:uplink.c      ****         
+ 395:uplink.c      ****     }
+ 396:uplink.c      ****     if(v==4){
+ 397:uplink.c      ****         if(vendStateT==1){
+ 398:uplink.c      ****             stopTimer();
+ 399:uplink.c      ****             RESET();
+ 400:uplink.c      ****         }
+ 401:uplink.c      ****     }
+ 402:uplink.c      **** 
+ 403:uplink.c      ****      if(v==6){
+ 404:uplink.c      ****         //v=7 is 20 seconds
+ 405:uplink.c      ****          if(mdb_state==MDB_SESSION_IDLE || mdb_state==MDB_VENDING ){
+ 406:uplink.c      **** 
+ 407:uplink.c      ****              cmd_approve_vend(vendValue);
+ 408:uplink.c      ****              
+ 409:uplink.c      ****              
+ 410:uplink.c      ****          }
+ 411:uplink.c      ****          
+ 412:uplink.c      **** 
+ 413:uplink.c      ****     }
+ 414:uplink.c      ****      if(v==7){
+ 415:uplink.c      **** 
+ 416:uplink.c      ****         if(vendStateT==1){
+ 417:uplink.c      ****             // play(2);
+ 418:uplink.c      ****             play(3);
+ 419:uplink.c      ****             //clearLastVendState();
+ 420:uplink.c      ****        /// cmd_approve_vend(vendValue);
+ 421:uplink.c      ****         stopTimer();
+ 422:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("###VENDINVOKED-S SUCCESS###\r\n"));
+ 423:uplink.c      ****         //RESET();
+ 424:uplink.c      ****       //  return;
+ 425:uplink.c      ****         }
+ 426:uplink.c      ****         else{
+ 427:uplink.c      ****                 //reversal
+ 428:uplink.c      ****                play(4);//vend-denied-payment-will1582628200.mp3
+ 429:uplink.c      ****                 cmd_deny_vend(vendValue);
+ 430:uplink.c      ****               //  clearLastVendState();
+ 431:uplink.c      **** 
+ 432:uplink.c      **** 
+ 433:uplink.c      ****                 //stopTimer();
+ 434:uplink.c      **** 
+ 435:uplink.c      ****                 send_str_p(UPLINK_USART, PSTR("###VENDINVOKED-R REVERSAL###\r\n"));
+ 436:uplink.c      ****                 
+ 437:uplink.c      ****                 //_delay_ms(4000);
+ 438:uplink.c      ****                 //RESET();
+ 439:uplink.c      ****                 //return;
+ 440:uplink.c      ****         }
+ 441:uplink.c      ****         
+ 442:uplink.c      **** 
+ 443:uplink.c      ****         
+ 444:uplink.c      ****     }
+ 445:uplink.c      ****     if(v==8){
+ 446:uplink.c      ****         stopTimer();
+ 447:uplink.c      ****         RESET();
+ 448:uplink.c      **** 
+ 449:uplink.c      ****         return;
+ 450:uplink.c      ****     }
+ 451:uplink.c      ****     
+ 452:uplink.c      ****     
+ 453:uplink.c      ****     
+ 454:uplink.c      ****     
+ 455:uplink.c      ****    
+ 456:uplink.c      ****     incrementTimerPass();
+ 457:uplink.c      ****     
+ 458:uplink.c      **** 
+ 459:uplink.c      ****     
+ 460:uplink.c      ****     
+ 461:uplink.c      ****     
+ 462:uplink.c      **** } */
+ 463:uplink.c      **** void vendInvoker(char *arg)
+ 464:uplink.c      **** {
+ 465:uplink.c      ****     uint16_t argV = 0; //atoi(arg);
+ 466:uplink.c      **** 
+ 467:uplink.c      ****     char delim[] = " ";
+ 468:uplink.c      ****     char *ptr = strtok(arg, delim);
+ 469:uplink.c      **** 
+ 470:uplink.c      ****     int a = 0; //vend value
+ 471:uplink.c      ****     int b = 0; //transaction id
+ 472:uplink.c      ****     int c = 0; //payment method
+ 473:uplink.c      ****                //   char* vendVal;
+ 474:uplink.c      ****     char buf[40];
+ 475:uplink.c      **** 
+ 476:uplink.c      ****     for (int i = 0; i <= 2; i++)
+ 477:uplink.c      ****     {
+ 478:uplink.c      ****         if (i == 0)
+ 479:uplink.c      ****         {
+ 480:uplink.c      ****             vendValue = ptr;
+ 481:uplink.c      ****             a = atoi(ptr);
+ 482:uplink.c      ****             argV = a;
+ 483:uplink.c      ****         }
+ 484:uplink.c      ****         else if (i == 1)
+ 485:uplink.c      ****         {
+ 486:uplink.c      ****             ptr = strtok(NULL, delim);
+ 487:uplink.c      ****             b = atoi(ptr);
+ 488:uplink.c      ****         }
+ 489:uplink.c      ****         else if (i == 2)
+ 490:uplink.c      ****         {
+ 491:uplink.c      ****             ptr = strtok(NULL, delim);
+ 492:uplink.c      ****             c = atoi(ptr);
+ 493:uplink.c      ****             paymentMethod = c;
+ 494:uplink.c      ****         }
+ 495:uplink.c      ****     }
+ 496:uplink.c      ****     sprintf(buf, "a==%d b==%d c==%d \r\n", a, b, c);
+ 497:uplink.c      ****     send_str(UPLINK_USART, buf);
+ 498:uplink.c      **** 
+ 499:uplink.c      ****     // vendValue=arg;
+ 500:uplink.c      **** 
+ 501:uplink.c      ****     char buf00[40];
+ 502:uplink.c      ****     sprintf(buf00, "LAST STATE=%d\r\n", getLastVendState());
+ 503:uplink.c      ****     send_str(UPLINK_USART, buf00);
+ 504:uplink.c      **** 
+ 505:uplink.c      ****     startTimer();
+ 506:uplink.c      **** 
+ 507:uplink.c      ****     //char buf[40];
+ 508:uplink.c      ****     sprintf(buf, "VendInvoked with Ammount:  %d\r\n", argV);
+ 509:uplink.c      ****     send_str(UPLINK_USART, buf);
+ 510:uplink.c      **** }
+ 511:uplink.c      **** 
+ 512:uplink.c      **** void cmd_help(char *arg)
+ 513:uplink.c      **** {
+  62               		.loc 1 513 1 is_stmt 1 view -0
+  63               		.cfi_startproc
+  64               	/* prologue: function */
+  65               	/* frame size = 0 */
+  66               	/* stack size = 0 */
+  67               	.L__stack_usage = 0
+ 514:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("-----------------------------------------------\r\n"));
+  68               		.loc 1 514 5 view .LVU12
+  69               	.LBB19:
+  70               		.loc 1 514 30 view .LVU13
+  71               		.loc 1 514 30 view .LVU14
+  72               	.LBE19:
+  73               		.loc 1 514 5 is_stmt 0 view .LVU15
+  74 0012 60E0      		ldi r22,lo8(__c.25)
+  75 0014 70E0      		ldi r23,hi8(__c.25)
+  76 0016 80E0      		ldi r24,0
+  77               	.LVL4:
+  78               		.loc 1 514 5 view .LVU16
+  79 0018 0E94 0000 		call send_str_p
+  80               	.LVL5:
+ 515:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("reset:\r\n   reset the Arduino\r\n"));
+  81               		.loc 1 515 5 is_stmt 1 view .LVU17
+  82               	.LBB20:
+  83               		.loc 1 515 30 view .LVU18
+  84               		.loc 1 515 30 view .LVU19
+  85               	.LBE20:
+  86               		.loc 1 515 5 is_stmt 0 view .LVU20
+  87 001c 60E0      		ldi r22,lo8(__c.24)
+  88 001e 70E0      		ldi r23,hi8(__c.24)
+  89 0020 80E0      		ldi r24,0
+  90 0022 0E94 0000 		call send_str_p
+  91               	.LVL6:
+ 516:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("info:\r\n   shows the VMC infos transfered during the setup proc
+  92               		.loc 1 516 5 is_stmt 1 view .LVU21
+  93               	.LBB21:
+  94               		.loc 1 516 30 view .LVU22
+  95               		.loc 1 516 30 view .LVU23
+  96               	.LBE21:
+  97               		.loc 1 516 5 is_stmt 0 view .LVU24
+  98 0026 60E0      		ldi r22,lo8(__c.23)
+  99 0028 70E0      		ldi r23,hi8(__c.23)
+ 100 002a 80E0      		ldi r24,0
+ 101 002c 0E94 0000 		call send_str_p
+ 102               	.LVL7:
+ 517:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("mdb-state:\r\n   displays the current MDB state.\r\n"));
+ 103               		.loc 1 517 5 is_stmt 1 view .LVU25
+ 104               	.LBB22:
+ 105               		.loc 1 517 30 view .LVU26
+ 106               		.loc 1 517 30 view .LVU27
+ 107               	.LBE22:
+ 108               		.loc 1 517 5 is_stmt 0 view .LVU28
+ 109 0030 60E0      		ldi r22,lo8(__c.22)
+ 110 0032 70E0      		ldi r23,hi8(__c.22)
+ 111 0034 80E0      		ldi r24,0
+ 112 0036 0E94 0000 		call send_str_p
+ 113               	.LVL8:
+ 518:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("start-session <funds>:\r\n   starts a session with <funds> Euro 
+ 114               		.loc 1 518 5 is_stmt 1 view .LVU29
+ 115               	.LBB23:
+ 116               		.loc 1 518 30 view .LVU30
+ 117               		.loc 1 518 30 view .LVU31
+ 118               	.LBE23:
+ 119               		.loc 1 518 5 is_stmt 0 view .LVU32
+ 120 003a 60E0      		ldi r22,lo8(__c.21)
+ 121 003c 70E0      		ldi r23,hi8(__c.21)
+ 122 003e 80E0      		ldi r24,0
+ 123 0040 0E94 0000 		call send_str_p
+ 124               	.LVL9:
+ 519:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("approve-vend <vend-amount>:\r\n   approves a vend request with <
+ 125               		.loc 1 519 5 is_stmt 1 view .LVU33
+ 126               	.LBB24:
+ 127               		.loc 1 519 30 view .LVU34
+ 128               		.loc 1 519 30 view .LVU35
+ 129               	.LBE24:
+ 130               		.loc 1 519 5 is_stmt 0 view .LVU36
+ 131 0044 60E0      		ldi r22,lo8(__c.20)
+ 132 0046 70E0      		ldi r23,hi8(__c.20)
+ 133 0048 80E0      		ldi r24,0
+ 134 004a 0E94 0000 		call send_str_p
+ 135               	.LVL10:
+ 520:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("deny-vend:\r\n   denies a vend request.\r\n"));
+ 136               		.loc 1 520 5 is_stmt 1 view .LVU37
+ 137               	.LBB25:
+ 138               		.loc 1 520 30 view .LVU38
+ 139               		.loc 1 520 30 view .LVU39
+ 140               	.LBE25:
+ 141               		.loc 1 520 5 is_stmt 0 view .LVU40
+ 142 004e 60E0      		ldi r22,lo8(__c.19)
+ 143 0050 70E0      		ldi r23,hi8(__c.19)
+ 144 0052 80E0      		ldi r24,0
+ 145 0054 0E94 0000 		call send_str_p
+ 146               	.LVL11:
+ 521:uplink.c      ****     send_str_p(UPLINK_USART, PSTR("-----------------------------------------------\r\n"));
+ 147               		.loc 1 521 5 is_stmt 1 view .LVU41
+ 148               	.LBB26:
+ 149               		.loc 1 521 30 view .LVU42
+ 150               		.loc 1 521 30 view .LVU43
+ 151               	.LBE26:
+ 152               		.loc 1 521 5 is_stmt 0 view .LVU44
+ 153 0058 60E0      		ldi r22,lo8(__c.18)
+ 154 005a 70E0      		ldi r23,hi8(__c.18)
+ 155 005c 80E0      		ldi r24,0
+ 156 005e 0C94 0000 		jmp send_str_p
+ 157               	.LVL12:
+ 158               		.cfi_endproc
+ 159               	.LFE25:
+ 161               	.global	cmd_get_mdb_state
+ 163               	cmd_get_mdb_state:
+ 164               	.LVL13:
+ 165               	.LFB27:
+ 522:uplink.c      **** }
+ 523:uplink.c      **** 
+ 524:uplink.c      **** void cmd_info(char *arg)
+ 525:uplink.c      **** {
+ 526:uplink.c      ****     if (mdb_state >= MDB_ENABLED)
+ 527:uplink.c      ****     {
+ 528:uplink.c      ****         char buffer[40];
+ 529:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@-----------------------------------------------\r\n"));
+ 530:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("## VMC configuration data ##\r\n"));
+ 531:uplink.c      ****         sprintf(buffer, "VMC feature level:       %d\r\n", vmc.feature_level);
+ 532:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 533:uplink.c      ****         sprintf(buffer, "VMC display columns:     %d\r\n", vmc.dispaly_cols);
+ 534:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 535:uplink.c      ****         sprintf(buffer, "VMC display rows:        %d\r\n", vmc.dispaly_rows);
+ 536:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 537:uplink.c      ****         sprintf(buffer, "VMC display info:        %d\r\n", vmc.dispaly_info);
+ 538:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 539:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("##    VMC price range     ##\r\n"));
+ 540:uplink.c      ****         sprintf(buffer, "Maximum price:           %d\r\n", price.max);
+ 541:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 542:uplink.c      ****         sprintf(buffer, "Minimum price:           %d\r\n", price.min);
+ 543:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 544:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("-----------------------------------------------*\r\n"));
+ 545:uplink.c      ****     }
+ 546:uplink.c      ****     else
+ 547:uplink.c      ****     {
+ 548:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("Error: Setup not yet completed!\r\n"));
+ 549:uplink.c      ****     }
+ 550:uplink.c      **** }
+ 551:uplink.c      **** 
+ 552:uplink.c      **** void cmd_get_mdb_state(char *arg)
+ 553:uplink.c      **** {
+ 166               		.loc 1 553 1 is_stmt 1 view -0
+ 167               		.cfi_startproc
+ 168               	/* prologue: function */
+ 169               	/* frame size = 0 */
+ 170               	/* stack size = 0 */
+ 171               	.L__stack_usage = 0
+ 554:uplink.c      ****     char buf[40];
+ 172               		.loc 1 554 5 view .LVU46
+ 555:uplink.c      ****     switch (mdb_state)
+ 173               		.loc 1 555 5 view .LVU47
+ 174 0062 E091 0000 		lds r30,mdb_state
+ 175 0066 E730      		cpi r30,lo8(7)
+ 176 0068 00F4      		brsh .L3
+ 177 006a F0E0      		ldi r31,0
+ 178 006c 8827      		clr r24
+ 179 006e E050      		subi r30,pm_lo8(-(.L6))
+ 180 0070 F040      		sbci r31,pm_hi8(-(.L6))
+ 181 0072 8040      		sbci r24,pm_hh8(-(.L6))
+ 182 0074 0C94 0000 		jmp __tablejump2__
+ 183               	.LVL14:
+ 184               		.section	.jumptables.gcc.cmd_get_mdb_state,"a",@progbits
+ 185               		.p2align	1
+ 186               	.L6:
+ 187 0000 0000      		.word gs(.L12)
+ 188 0002 0000      		.word gs(.L11)
+ 189 0004 0000      		.word gs(.L10)
+ 190 0006 0000      		.word gs(.L9)
+ 191 0008 0000      		.word gs(.L8)
+ 192 000a 0000      		.word gs(.L7)
+ 193 000c 0000      		.word gs(.L5)
+ 194               		.text
+ 195               	.L12:
+ 556:uplink.c      ****     {
+ 557:uplink.c      ****         sprintf(buf, "@MDB_STATE=%d* \r\n", mdb_state);
+ 558:uplink.c      ****         send_str(UPLINK_USART, buf);
+ 559:uplink.c      ****         send_str(UPLINK_USART, buf);
+ 560:uplink.c      ****     case MDB_INACTIVE:
+ 561:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: INACTIVE*\r\n"));
+ 196               		.loc 1 561 9 view .LVU48
+ 197               	.LBB27:
+ 198               		.loc 1 561 34 view .LVU49
+ 199               		.loc 1 561 34 view .LVU50
+ 200               	.LBE27:
+ 201               		.loc 1 561 9 is_stmt 0 view .LVU51
+ 202 0078 60E0      		ldi r22,lo8(__c.12)
+ 203 007a 70E0      		ldi r23,hi8(__c.12)
+ 204               	.L13:
+ 562:uplink.c      ****         break;
+ 563:uplink.c      ****     case MDB_DISABLED:
+ 564:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: DISABLED*\r\n"));
+ 565:uplink.c      ****         break;
+ 566:uplink.c      ****     case MDB_ENABLED:
+ 567:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: ENABLED*\r\n"));
+ 568:uplink.c      ****         break;
+ 569:uplink.c      ****     case MDB_SESSION_IDLE:
+ 570:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: SESSION IDLE*\r\n"));
+ 571:uplink.c      ****         break;
+ 572:uplink.c      ****     case MDB_VENDING:
+ 573:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: VEND*\r\n"));
+ 574:uplink.c      ****         break;
+ 575:uplink.c      ****     case MDB_REVALUE:
+ 576:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: REVALUE*\r\n"));
+ 577:uplink.c      ****         break;
+ 578:uplink.c      ****     case MDB_NEGATIVE_VEND:
+ 579:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@State: NEGATIVE VEND*\r\n"));
+ 205               		.loc 1 579 9 view .LVU52
+ 206 007c 80E0      		ldi r24,0
+ 207 007e 0C94 0000 		jmp send_str_p
+ 208               	.LVL15:
+ 209               	.L11:
+ 564:uplink.c      ****         break;
+ 210               		.loc 1 564 9 is_stmt 1 view .LVU53
+ 211               	.LBB28:
+ 564:uplink.c      ****         break;
+ 212               		.loc 1 564 34 view .LVU54
+ 564:uplink.c      ****         break;
+ 213               		.loc 1 564 34 view .LVU55
+ 214               	.LBE28:
+ 564:uplink.c      ****         break;
+ 215               		.loc 1 564 9 is_stmt 0 view .LVU56
+ 216 0082 60E0      		ldi r22,lo8(__c.11)
+ 217 0084 70E0      		ldi r23,hi8(__c.11)
+ 218 0086 00C0      		rjmp .L13
+ 219               	.L10:
+ 567:uplink.c      ****         break;
+ 220               		.loc 1 567 9 is_stmt 1 view .LVU57
+ 221               	.LBB29:
+ 567:uplink.c      ****         break;
+ 222               		.loc 1 567 34 view .LVU58
+ 567:uplink.c      ****         break;
+ 223               		.loc 1 567 34 view .LVU59
+ 224               	.LBE29:
+ 567:uplink.c      ****         break;
+ 225               		.loc 1 567 9 is_stmt 0 view .LVU60
+ 226 0088 60E0      		ldi r22,lo8(__c.10)
+ 227 008a 70E0      		ldi r23,hi8(__c.10)
+ 228 008c 00C0      		rjmp .L13
+ 229               	.L9:
+ 570:uplink.c      ****         break;
+ 230               		.loc 1 570 9 is_stmt 1 view .LVU61
+ 231               	.LBB30:
+ 570:uplink.c      ****         break;
+ 232               		.loc 1 570 34 view .LVU62
+ 570:uplink.c      ****         break;
+ 233               		.loc 1 570 34 view .LVU63
+ 234               	.LBE30:
+ 570:uplink.c      ****         break;
+ 235               		.loc 1 570 9 is_stmt 0 view .LVU64
+ 236 008e 60E0      		ldi r22,lo8(__c.9)
+ 237 0090 70E0      		ldi r23,hi8(__c.9)
+ 238 0092 00C0      		rjmp .L13
+ 239               	.L8:
+ 573:uplink.c      ****         break;
+ 240               		.loc 1 573 9 is_stmt 1 view .LVU65
+ 241               	.LBB31:
+ 573:uplink.c      ****         break;
+ 242               		.loc 1 573 34 view .LVU66
+ 573:uplink.c      ****         break;
+ 243               		.loc 1 573 34 view .LVU67
+ 244               	.LBE31:
+ 573:uplink.c      ****         break;
+ 245               		.loc 1 573 9 is_stmt 0 view .LVU68
+ 246 0094 60E0      		ldi r22,lo8(__c.8)
+ 247 0096 70E0      		ldi r23,hi8(__c.8)
+ 248 0098 00C0      		rjmp .L13
+ 249               	.L7:
+ 576:uplink.c      ****         break;
+ 250               		.loc 1 576 9 is_stmt 1 view .LVU69
+ 251               	.LBB32:
+ 576:uplink.c      ****         break;
+ 252               		.loc 1 576 34 view .LVU70
+ 576:uplink.c      ****         break;
+ 253               		.loc 1 576 34 view .LVU71
+ 254               	.LBE32:
+ 576:uplink.c      ****         break;
+ 255               		.loc 1 576 9 is_stmt 0 view .LVU72
+ 256 009a 60E0      		ldi r22,lo8(__c.7)
+ 257 009c 70E0      		ldi r23,hi8(__c.7)
+ 258 009e 00C0      		rjmp .L13
+ 259               	.L5:
+ 260               		.loc 1 579 9 is_stmt 1 view .LVU73
+ 261               	.LBB33:
+ 262               		.loc 1 579 34 view .LVU74
+ 263               		.loc 1 579 34 view .LVU75
+ 264               	.LBE33:
+ 265               		.loc 1 579 9 is_stmt 0 view .LVU76
+ 266 00a0 60E0      		ldi r22,lo8(__c.6)
+ 267 00a2 70E0      		ldi r23,hi8(__c.6)
+ 268 00a4 00C0      		rjmp .L13
+ 269               	.LVL16:
+ 270               	.L3:
+ 271               	/* epilogue start */
+ 580:uplink.c      ****         break;
+ 581:uplink.c      ****     }
+ 582:uplink.c      **** }
+ 272               		.loc 1 582 1 view .LVU77
+ 273 00a6 0895      		ret
+ 274               		.cfi_endproc
+ 275               	.LFE27:
+ 277               	.global	cmd_io
+ 279               	cmd_io:
+ 280               	.LVL17:
+ 281               	.LFB15:
+ 141:uplink.c      ****     //uint16_t sizeStr=strlen(arg);
+ 282               		.loc 1 141 1 is_stmt 1 view -0
+ 283               		.cfi_startproc
+ 284               	/* prologue: function */
+ 285               	/* frame size = 0 */
+ 286               	/* stack size = 0 */
+ 287               	.L__stack_usage = 0
+ 144:uplink.c      ****     uint16_t pinNumber = atoi(arg) / 100;
+ 288               		.loc 1 144 5 view .LVU79
+ 144:uplink.c      ****     uint16_t pinNumber = atoi(arg) / 100;
+ 289               		.loc 1 144 21 is_stmt 0 view .LVU80
+ 290 00a8 0E94 0000 		call atoi
+ 291               	.LVL18:
+ 145:uplink.c      ****     uint16_t pinState = atoi(arg) % 100;
+ 292               		.loc 1 145 5 is_stmt 1 view .LVU81
+ 146:uplink.c      **** 
+ 293               		.loc 1 146 5 view .LVU82
+ 168:uplink.c      ****     {
+ 294               		.loc 1 168 5 view .LVU83
+ 168:uplink.c      ****     {
+ 295               		.loc 1 168 8 is_stmt 0 view .LVU84
+ 296 00ac 9C01      		movw r18,r24
+ 297 00ae 205B      		subi r18,-80
+ 298 00b0 3440      		sbci r19,4
+ 299 00b2 2436      		cpi r18,100
+ 300 00b4 3105      		cpc r19,__zero_reg__
+ 301 00b6 00F4      		brsh .L14
+ 146:uplink.c      **** 
+ 302               		.loc 1 146 35 view .LVU85
+ 303 00b8 64E6      		ldi r22,lo8(100)
+ 304 00ba 70E0      		ldi r23,0
+ 305 00bc 0E94 0000 		call __divmodhi4
+ 306               	.LVL19:
+ 170:uplink.c      ****         {
+ 307               		.loc 1 170 9 is_stmt 1 view .LVU86
+ 170:uplink.c      ****         {
+ 308               		.loc 1 170 12 is_stmt 0 view .LVU87
+ 309 00c0 0097      		sbiw r24,0
+ 310 00c2 01F4      		brne .L16
+ 172:uplink.c      **** 
+ 311               		.loc 1 172 13 is_stmt 1 view .LVU88
+ 312               	.LBB34:
+ 172:uplink.c      **** 
+ 313               		.loc 1 172 38 view .LVU89
+ 172:uplink.c      **** 
+ 314               		.loc 1 172 38 view .LVU90
+ 315               	.LBE34:
+ 172:uplink.c      **** 
+ 316               		.loc 1 172 13 is_stmt 0 view .LVU91
+ 317 00c4 60E0      		ldi r22,lo8(__c.32)
+ 318 00c6 70E0      		ldi r23,hi8(__c.32)
+ 319               	.LVL20:
+ 172:uplink.c      **** 
+ 320               		.loc 1 172 13 view .LVU92
+ 321 00c8 80E0      		ldi r24,0
+ 322               	.LVL21:
+ 172:uplink.c      **** 
+ 323               		.loc 1 172 13 view .LVU93
+ 324 00ca 0E94 0000 		call send_str_p
+ 325               	.LVL22:
+ 174:uplink.c      ****         }
+ 326               		.loc 1 174 13 is_stmt 1 view .LVU94
+ 174:uplink.c      ****         }
+ 327               		.loc 1 174 19 is_stmt 0 view .LVU95
+ 328 00ce 15B8      		out 0x5,__zero_reg__
+ 329 00d0 0895      		ret
+ 330               	.LVL23:
+ 331               	.L16:
+ 176:uplink.c      ****         {
+ 332               		.loc 1 176 14 is_stmt 1 view .LVU96
+ 176:uplink.c      ****         {
+ 333               		.loc 1 176 17 is_stmt 0 view .LVU97
+ 334 00d2 8130      		cpi r24,1
+ 335 00d4 9105      		cpc r25,__zero_reg__
+ 336 00d6 01F4      		brne .L17
+ 178:uplink.c      **** 
+ 337               		.loc 1 178 13 is_stmt 1 view .LVU98
+ 338               	.LBB35:
+ 178:uplink.c      **** 
+ 339               		.loc 1 178 38 view .LVU99
+ 178:uplink.c      **** 
+ 340               		.loc 1 178 38 view .LVU100
+ 341               	.LBE35:
+ 178:uplink.c      **** 
+ 342               		.loc 1 178 13 is_stmt 0 view .LVU101
+ 343 00d8 60E0      		ldi r22,lo8(__c.31)
+ 344 00da 70E0      		ldi r23,hi8(__c.31)
+ 345               	.LVL24:
+ 178:uplink.c      **** 
+ 346               		.loc 1 178 13 view .LVU102
+ 347 00dc 80E0      		ldi r24,0
+ 348               	.LVL25:
+ 178:uplink.c      **** 
+ 349               		.loc 1 178 13 view .LVU103
+ 350 00de 0E94 0000 		call send_str_p
+ 351               	.LVL26:
+ 180:uplink.c      ****         }
+ 352               		.loc 1 180 13 is_stmt 1 view .LVU104
+ 180:uplink.c      ****         }
+ 353               		.loc 1 180 19 is_stmt 0 view .LVU105
+ 354 00e2 80E4      		ldi r24,lo8(64)
+ 355 00e4 85B9      		out 0x5,r24
+ 356 00e6 0895      		ret
+ 357               	.LVL27:
+ 358               	.L17:
+ 182:uplink.c      ****         {
+ 359               		.loc 1 182 14 is_stmt 1 view .LVU106
+ 184:uplink.c      ****         }
+ 360               		.loc 1 184 13 is_stmt 0 view .LVU107
+ 361 00e8 60E0      		ldi r22,lo8(__c.30)
+ 362 00ea 70E0      		ldi r23,hi8(__c.30)
+ 363               	.LVL28:
+ 182:uplink.c      ****         {
+ 364               		.loc 1 182 17 view .LVU108
+ 365 00ec 8230      		cpi r24,2
+ 366 00ee 9105      		cpc r25,__zero_reg__
+ 367 00f0 01F0      		breq .L19
+ 186:uplink.c      ****         {
+ 368               		.loc 1 186 14 is_stmt 1 view .LVU109
+ 186:uplink.c      ****         {
+ 369               		.loc 1 186 17 is_stmt 0 view .LVU110
+ 370 00f2 0397      		sbiw r24,3
+ 371 00f4 01F4      		brne .L14
+ 188:uplink.c      ****         }
+ 372               		.loc 1 188 13 is_stmt 1 view .LVU111
+ 373               	.LBB36:
+ 188:uplink.c      ****         }
+ 374               		.loc 1 188 38 view .LVU112
+ 188:uplink.c      ****         }
+ 375               		.loc 1 188 38 view .LVU113
+ 376               	.LBE36:
+ 188:uplink.c      ****         }
+ 377               		.loc 1 188 13 is_stmt 0 view .LVU114
+ 378 00f6 60E0      		ldi r22,lo8(__c.29)
+ 379 00f8 70E0      		ldi r23,hi8(__c.29)
+ 380               	.L19:
+ 381 00fa 80E0      		ldi r24,0
+ 382               	.LVL29:
+ 188:uplink.c      ****         }
+ 383               		.loc 1 188 13 view .LVU115
+ 384 00fc 0C94 0000 		jmp send_str_p
+ 385               	.LVL30:
+ 386               	.L14:
+ 387               	/* epilogue start */
+ 191:uplink.c      **** void startTimer()
+ 388               		.loc 1 191 1 view .LVU116
+ 389 0100 0895      		ret
+ 390               		.cfi_endproc
+ 391               	.LFE15:
+ 393               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 394               	.LC0:
+ 395 0000 613D 3D25 		.string	"a==%d b==%d c==%d \r\n"
+ 395      6420 623D 
+ 395      3D25 6420 
+ 395      633D 3D25 
+ 395      6420 0D0A 
+ 396               	.LC1:
+ 397 0015 4C41 5354 		.string	"LAST STATE=%d\r\n"
+ 397      2053 5441 
+ 397      5445 3D25 
+ 397      640D 0A00 
+ 398               	.LC2:
+ 399 0025 5665 6E64 		.string	"VendInvoked with Ammount:  %d\r\n"
+ 399      496E 766F 
+ 399      6B65 6420 
+ 399      7769 7468 
+ 399      2041 6D6D 
+ 400               		.text
+ 401               	.global	vendInvoker
+ 403               	vendInvoker:
+ 404               	.LVL31:
+ 405               	.LFB24:
+ 464:uplink.c      ****     uint16_t argV = 0; //atoi(arg);
+ 406               		.loc 1 464 1 is_stmt 1 view -0
+ 407               		.cfi_startproc
+ 464:uplink.c      ****     uint16_t argV = 0; //atoi(arg);
+ 408               		.loc 1 464 1 is_stmt 0 view .LVU118
+ 409 0102 4F92      		push r4
+ 410               	.LCFI0:
+ 411               		.cfi_def_cfa_offset 4
+ 412               		.cfi_offset 4, -3
+ 413 0104 5F92      		push r5
+ 414               	.LCFI1:
+ 415               		.cfi_def_cfa_offset 5
+ 416               		.cfi_offset 5, -4
+ 417 0106 6F92      		push r6
+ 418               	.LCFI2:
+ 419               		.cfi_def_cfa_offset 6
+ 420               		.cfi_offset 6, -5
+ 421 0108 7F92      		push r7
+ 422               	.LCFI3:
+ 423               		.cfi_def_cfa_offset 7
+ 424               		.cfi_offset 7, -6
+ 425 010a 8F92      		push r8
+ 426               	.LCFI4:
+ 427               		.cfi_def_cfa_offset 8
+ 428               		.cfi_offset 8, -7
+ 429 010c 9F92      		push r9
+ 430               	.LCFI5:
+ 431               		.cfi_def_cfa_offset 9
+ 432               		.cfi_offset 9, -8
+ 433 010e AF92      		push r10
+ 434               	.LCFI6:
+ 435               		.cfi_def_cfa_offset 10
+ 436               		.cfi_offset 10, -9
+ 437 0110 BF92      		push r11
+ 438               	.LCFI7:
+ 439               		.cfi_def_cfa_offset 11
+ 440               		.cfi_offset 11, -10
+ 441 0112 CF92      		push r12
+ 442               	.LCFI8:
+ 443               		.cfi_def_cfa_offset 12
+ 444               		.cfi_offset 12, -11
+ 445 0114 DF92      		push r13
+ 446               	.LCFI9:
+ 447               		.cfi_def_cfa_offset 13
+ 448               		.cfi_offset 13, -12
+ 449 0116 EF92      		push r14
+ 450               	.LCFI10:
+ 451               		.cfi_def_cfa_offset 14
+ 452               		.cfi_offset 14, -13
+ 453 0118 FF92      		push r15
+ 454               	.LCFI11:
+ 455               		.cfi_def_cfa_offset 15
+ 456               		.cfi_offset 15, -14
+ 457 011a 0F93      		push r16
+ 458               	.LCFI12:
+ 459               		.cfi_def_cfa_offset 16
+ 460               		.cfi_offset 16, -15
+ 461 011c 1F93      		push r17
+ 462               	.LCFI13:
+ 463               		.cfi_def_cfa_offset 17
+ 464               		.cfi_offset 17, -16
+ 465 011e CF93      		push r28
+ 466               	.LCFI14:
+ 467               		.cfi_def_cfa_offset 18
+ 468               		.cfi_offset 28, -17
+ 469 0120 DF93      		push r29
+ 470               	.LCFI15:
+ 471               		.cfi_def_cfa_offset 19
+ 472               		.cfi_offset 29, -18
+ 473 0122 CDB7      		in r28,__SP_L__
+ 474 0124 DEB7      		in r29,__SP_H__
+ 475               	.LCFI16:
+ 476               		.cfi_def_cfa_register 28
+ 477 0126 C255      		subi r28,82
+ 478 0128 D109      		sbc r29,__zero_reg__
+ 479               	.LCFI17:
+ 480               		.cfi_def_cfa_offset 101
+ 481 012a 0FB6      		in __tmp_reg__,__SREG__
+ 482 012c F894      		cli
+ 483 012e DEBF      		out __SP_H__,r29
+ 484 0130 0FBE      		out __SREG__,__tmp_reg__
+ 485 0132 CDBF      		out __SP_L__,r28
+ 486               	/* prologue: function */
+ 487               	/* frame size = 82 */
+ 488               	/* stack size = 98 */
+ 489               	.L__stack_usage = 98
+ 465:uplink.c      **** 
+ 490               		.loc 1 465 5 is_stmt 1 view .LVU119
+ 491               	.LVL32:
+ 467:uplink.c      ****     char *ptr = strtok(arg, delim);
+ 492               		.loc 1 467 5 view .LVU120
+ 467:uplink.c      ****     char *ptr = strtok(arg, delim);
+ 493               		.loc 1 467 10 is_stmt 0 view .LVU121
+ 494 0134 4E01      		movw r8,r28
+ 495 0136 21E5      		ldi r18,81
+ 496 0138 820E      		add r8,r18
+ 497 013a 911C      		adc r9,__zero_reg__
+ 498 013c 20E2      		ldi r18,lo8(32)
+ 499 013e 30E0      		ldi r19,0
+ 500 0140 F401      		movw r30,r8
+ 501 0142 3183      		std Z+1,r19
+ 502 0144 2083      		st Z,r18
+ 468:uplink.c      **** 
+ 503               		.loc 1 468 5 is_stmt 1 view .LVU122
+ 468:uplink.c      **** 
+ 504               		.loc 1 468 17 is_stmt 0 view .LVU123
+ 505 0146 B401      		movw r22,r8
+ 506 0148 0E94 0000 		call strtok
+ 507               	.LVL33:
+ 468:uplink.c      **** 
+ 508               		.loc 1 468 17 view .LVU124
+ 509 014c 182F      		mov r17,r24
+ 510 014e 092F      		mov r16,r25
+ 511               	.LVL34:
+ 470:uplink.c      ****     int b = 0; //transaction id
+ 512               		.loc 1 470 5 is_stmt 1 view .LVU125
+ 471:uplink.c      ****     int c = 0; //payment method
+ 513               		.loc 1 471 5 view .LVU126
+ 472:uplink.c      ****                //   char* vendVal;
+ 514               		.loc 1 472 5 view .LVU127
+ 474:uplink.c      **** 
+ 515               		.loc 1 474 5 view .LVU128
+ 476:uplink.c      ****     {
+ 516               		.loc 1 476 5 view .LVU129
+ 517               	.LBB37:
+ 476:uplink.c      ****     {
+ 518               		.loc 1 476 10 view .LVU130
+ 476:uplink.c      ****     {
+ 519               		.loc 1 476 23 view .LVU131
+ 476:uplink.c      ****     {
+ 520               		.loc 1 476 14 is_stmt 0 view .LVU132
+ 521 0150 B12C      		mov r11,__zero_reg__
+ 522 0152 A12C      		mov r10,__zero_reg__
+ 523               	.LBE37:
+ 472:uplink.c      ****                //   char* vendVal;
+ 524               		.loc 1 472 9 view .LVU133
+ 525 0154 D12C      		mov r13,__zero_reg__
+ 526 0156 612C      		mov r6,__zero_reg__
+ 471:uplink.c      ****     int c = 0; //payment method
+ 527               		.loc 1 471 9 view .LVU134
+ 528 0158 C12C      		mov r12,__zero_reg__
+ 529 015a 712C      		mov r7,__zero_reg__
+ 470:uplink.c      ****     int b = 0; //transaction id
+ 530               		.loc 1 470 9 view .LVU135
+ 531 015c F12C      		mov r15,__zero_reg__
+ 532 015e E12C      		mov r14,__zero_reg__
+ 465:uplink.c      **** 
+ 533               		.loc 1 465 14 view .LVU136
+ 534 0160 512C      		mov r5,__zero_reg__
+ 535 0162 412C      		mov r4,__zero_reg__
+ 536               	.LVL35:
+ 537               	.L24:
+ 538               	.LBB38:
+ 478:uplink.c      ****         {
+ 539               		.loc 1 478 9 is_stmt 1 view .LVU137
+ 478:uplink.c      ****         {
+ 540               		.loc 1 478 12 is_stmt 0 view .LVU138
+ 541 0164 A114      		cp r10,__zero_reg__
+ 542 0166 B104      		cpc r11,__zero_reg__
+ 543 0168 01F0      		breq .+2
+ 544 016a 00C0      		rjmp .L21
+ 545               	.LVL36:
+ 480:uplink.c      ****             a = atoi(ptr);
+ 546               		.loc 1 480 13 is_stmt 1 view .LVU139
+ 480:uplink.c      ****             a = atoi(ptr);
+ 547               		.loc 1 480 23 is_stmt 0 view .LVU140
+ 548 016c 1093 0000 		sts vendValue,r17
+ 549 0170 0093 0000 		sts vendValue+1,r16
+ 481:uplink.c      ****             argV = a;
+ 550               		.loc 1 481 13 is_stmt 1 view .LVU141
+ 481:uplink.c      ****             argV = a;
+ 551               		.loc 1 481 17 is_stmt 0 view .LVU142
+ 552 0174 812F      		mov r24,r17
+ 553 0176 902F      		mov r25,r16
+ 554 0178 0E94 0000 		call atoi
+ 555               	.LVL37:
+ 481:uplink.c      ****             argV = a;
+ 556               		.loc 1 481 17 view .LVU143
+ 557 017c F82E      		mov r15,r24
+ 558               	.LVL38:
+ 481:uplink.c      ****             argV = a;
+ 559               		.loc 1 481 17 view .LVU144
+ 560 017e E92E      		mov r14,r25
+ 482:uplink.c      ****         }
+ 561               		.loc 1 482 13 is_stmt 1 view .LVU145
+ 562               	.LVL39:
+ 482:uplink.c      ****         }
+ 563               		.loc 1 482 18 is_stmt 0 view .LVU146
+ 564 0180 2701      		movw r4,r14
+ 565               	.LVL40:
+ 566               	.L22:
+ 476:uplink.c      ****     {
+ 567               		.loc 1 476 30 is_stmt 1 discriminator 2 view .LVU147
+ 568 0182 2FEF      		ldi r18,-1
+ 569 0184 A21A      		sub r10,r18
+ 570 0186 B20A      		sbc r11,r18
+ 571               	.LVL41:
+ 476:uplink.c      ****     {
+ 572               		.loc 1 476 23 discriminator 2 view .LVU148
+ 573 0188 83E0      		ldi r24,3
+ 574 018a A816      		cp r10,r24
+ 575 018c B104      		cpc r11,__zero_reg__
+ 576 018e 01F4      		brne .L24
+ 577               	.LBE38:
+ 496:uplink.c      ****     send_str(UPLINK_USART, buf);
+ 578               		.loc 1 496 5 view .LVU149
+ 579 0190 6F92      		push r6
+ 580 0192 DF92      		push r13
+ 581 0194 7F92      		push r7
+ 582 0196 CF92      		push r12
+ 583 0198 EF92      		push r14
+ 584 019a FF92      		push r15
+ 585 019c 80E0      		ldi r24,lo8(.LC0)
+ 586 019e 90E0      		ldi r25,hi8(.LC0)
+ 587 01a0 9F93      		push r25
+ 588 01a2 8F93      		push r24
+ 589 01a4 8E01      		movw r16,r28
+ 590               	.LVL42:
+ 496:uplink.c      ****     send_str(UPLINK_USART, buf);
+ 591               		.loc 1 496 5 is_stmt 0 view .LVU150
+ 592 01a6 075D      		subi r16,-41
+ 593 01a8 1F4F      		sbci r17,-1
+ 594 01aa 1F93      		push r17
+ 595 01ac 0F93      		push r16
+ 596 01ae 0E94 0000 		call sprintf
+ 597               	.LVL43:
+ 497:uplink.c      **** 
+ 598               		.loc 1 497 5 is_stmt 1 view .LVU151
+ 599 01b2 B801      		movw r22,r16
+ 600 01b4 80E0      		ldi r24,0
+ 601 01b6 0E94 0000 		call send_str
+ 602               	.LVL44:
+ 501:uplink.c      ****     sprintf(buf00, "LAST STATE=%d\r\n", getLastVendState());
+ 603               		.loc 1 501 5 view .LVU152
+ 502:uplink.c      ****     send_str(UPLINK_USART, buf00);
+ 604               		.loc 1 502 5 view .LVU153
+ 502:uplink.c      ****     send_str(UPLINK_USART, buf00);
+ 605               		.loc 1 502 41 is_stmt 0 view .LVU154
+ 606 01ba 0E94 0000 		call getLastVendState
+ 607               	.LVL45:
+ 502:uplink.c      ****     send_str(UPLINK_USART, buf00);
+ 608               		.loc 1 502 5 view .LVU155
+ 609 01be 1F92      		push __zero_reg__
+ 610 01c0 8F93      		push r24
+ 611 01c2 80E0      		ldi r24,lo8(.LC1)
+ 612 01c4 90E0      		ldi r25,hi8(.LC1)
+ 613 01c6 9F93      		push r25
+ 614 01c8 8F93      		push r24
+ 615 01ca FE01      		movw r30,r28
+ 616 01cc 3196      		adiw r30,1
+ 617 01ce 7F01      		movw r14,r30
+ 618 01d0 FF93      		push r31
+ 619 01d2 EF93      		push r30
+ 620 01d4 0E94 0000 		call sprintf
+ 621               	.LVL46:
+ 503:uplink.c      **** 
+ 622               		.loc 1 503 5 is_stmt 1 view .LVU156
+ 623 01d8 B701      		movw r22,r14
+ 624 01da 80E0      		ldi r24,0
+ 625 01dc 0E94 0000 		call send_str
+ 626               	.LVL47:
+ 505:uplink.c      **** 
+ 627               		.loc 1 505 5 view .LVU157
+ 628               	.LBB39:
+ 629               	.LBI39:
+ 192:uplink.c      **** {
+ 630               		.loc 1 192 6 view .LVU158
+ 631               	.LBB40:
+ 194:uplink.c      **** }
+ 632               		.loc 1 194 5 view .LVU159
+ 194:uplink.c      **** }
+ 633               		.loc 1 194 14 is_stmt 0 view .LVU160
+ 634 01e0 81E0      		ldi r24,lo8(1)
+ 635 01e2 8093 0000 		sts timerVal,r24
+ 636               	.LBE40:
+ 637               	.LBE39:
+ 508:uplink.c      ****     send_str(UPLINK_USART, buf);
+ 638               		.loc 1 508 5 is_stmt 1 view .LVU161
+ 639 01e6 4F92      		push r4
+ 640 01e8 5F92      		push r5
+ 641 01ea 80E0      		ldi r24,lo8(.LC2)
+ 642 01ec 90E0      		ldi r25,hi8(.LC2)
+ 643 01ee 9F93      		push r25
+ 644 01f0 8F93      		push r24
+ 645 01f2 1F93      		push r17
+ 646 01f4 0F93      		push r16
+ 647 01f6 0E94 0000 		call sprintf
+ 648               	.LVL48:
+ 509:uplink.c      **** }
+ 649               		.loc 1 509 5 view .LVU162
+ 650 01fa B801      		movw r22,r16
+ 651 01fc 80E0      		ldi r24,0
+ 652 01fe 0E94 0000 		call send_str
+ 653               	.LVL49:
+ 510:uplink.c      **** 
+ 654               		.loc 1 510 1 is_stmt 0 view .LVU163
+ 655 0202 0FB6      		in __tmp_reg__,__SREG__
+ 656 0204 F894      		cli
+ 657 0206 DEBF      		out __SP_H__,r29
+ 658 0208 0FBE      		out __SREG__,__tmp_reg__
+ 659 020a CDBF      		out __SP_L__,r28
+ 660               	/* epilogue start */
+ 661 020c CE5A      		subi r28,-82
+ 662 020e DF4F      		sbci r29,-1
+ 663 0210 0FB6      		in __tmp_reg__,__SREG__
+ 664 0212 F894      		cli
+ 665 0214 DEBF      		out __SP_H__,r29
+ 666 0216 0FBE      		out __SREG__,__tmp_reg__
+ 667 0218 CDBF      		out __SP_L__,r28
+ 668 021a DF91      		pop r29
+ 669 021c CF91      		pop r28
+ 670 021e 1F91      		pop r17
+ 510:uplink.c      **** 
+ 671               		.loc 1 510 1 view .LVU164
+ 672 0220 0F91      		pop r16
+ 673 0222 FF90      		pop r15
+ 674 0224 EF90      		pop r14
+ 675 0226 DF90      		pop r13
+ 676               	.LVL50:
+ 510:uplink.c      **** 
+ 677               		.loc 1 510 1 view .LVU165
+ 678 0228 CF90      		pop r12
+ 679               	.LVL51:
+ 510:uplink.c      **** 
+ 680               		.loc 1 510 1 view .LVU166
+ 681 022a BF90      		pop r11
+ 682 022c AF90      		pop r10
+ 683               	.LVL52:
+ 510:uplink.c      **** 
+ 684               		.loc 1 510 1 view .LVU167
+ 685 022e 9F90      		pop r9
+ 686 0230 8F90      		pop r8
+ 687 0232 7F90      		pop r7
+ 688 0234 6F90      		pop r6
+ 689 0236 5F90      		pop r5
+ 690 0238 4F90      		pop r4
+ 691 023a 0895      		ret
+ 692               	.LVL53:
+ 693               	.L21:
+ 694               	.LBB41:
+ 484:uplink.c      ****         {
+ 695               		.loc 1 484 14 is_stmt 1 view .LVU168
+ 486:uplink.c      ****             b = atoi(ptr);
+ 696               		.loc 1 486 19 is_stmt 0 view .LVU169
+ 697 023c B401      		movw r22,r8
+ 698 023e 90E0      		ldi r25,0
+ 699 0240 80E0      		ldi r24,0
+ 484:uplink.c      ****         {
+ 700               		.loc 1 484 17 view .LVU170
+ 701 0242 F1E0      		ldi r31,1
+ 702 0244 AF16      		cp r10,r31
+ 703 0246 B104      		cpc r11,__zero_reg__
+ 704 0248 01F4      		brne .L23
+ 486:uplink.c      ****             b = atoi(ptr);
+ 705               		.loc 1 486 13 is_stmt 1 view .LVU171
+ 486:uplink.c      ****             b = atoi(ptr);
+ 706               		.loc 1 486 19 is_stmt 0 view .LVU172
+ 707 024a 0E94 0000 		call strtok
+ 708               	.LVL54:
+ 709 024e 182F      		mov r17,r24
+ 710               	.LVL55:
+ 486:uplink.c      ****             b = atoi(ptr);
+ 711               		.loc 1 486 19 view .LVU173
+ 712 0250 092F      		mov r16,r25
+ 713               	.LVL56:
+ 487:uplink.c      ****         }
+ 714               		.loc 1 487 13 is_stmt 1 view .LVU174
+ 487:uplink.c      ****         }
+ 715               		.loc 1 487 17 is_stmt 0 view .LVU175
+ 716 0252 0E94 0000 		call atoi
+ 717               	.LVL57:
+ 718 0256 C82E      		mov r12,r24
+ 719               	.LVL58:
+ 487:uplink.c      ****         }
+ 720               		.loc 1 487 17 view .LVU176
+ 721 0258 792E      		mov r7,r25
+ 722               	.LVL59:
+ 487:uplink.c      ****         }
+ 723               		.loc 1 487 17 view .LVU177
+ 724 025a 00C0      		rjmp .L22
+ 725               	.L23:
+ 489:uplink.c      ****         {
+ 726               		.loc 1 489 14 is_stmt 1 view .LVU178
+ 491:uplink.c      ****             c = atoi(ptr);
+ 727               		.loc 1 491 13 view .LVU179
+ 491:uplink.c      ****             c = atoi(ptr);
+ 728               		.loc 1 491 19 is_stmt 0 view .LVU180
+ 729 025c 0E94 0000 		call strtok
+ 730               	.LVL60:
+ 731 0260 182F      		mov r17,r24
+ 732               	.LVL61:
+ 491:uplink.c      ****             c = atoi(ptr);
+ 733               		.loc 1 491 19 view .LVU181
+ 734 0262 092F      		mov r16,r25
+ 735               	.LVL62:
+ 492:uplink.c      ****             paymentMethod = c;
+ 736               		.loc 1 492 13 is_stmt 1 view .LVU182
+ 492:uplink.c      ****             paymentMethod = c;
+ 737               		.loc 1 492 17 is_stmt 0 view .LVU183
+ 738 0264 0E94 0000 		call atoi
+ 739               	.LVL63:
+ 740 0268 D82E      		mov r13,r24
+ 741               	.LVL64:
+ 492:uplink.c      ****             paymentMethod = c;
+ 742               		.loc 1 492 17 view .LVU184
+ 743 026a 692E      		mov r6,r25
+ 744               	.LVL65:
+ 493:uplink.c      ****         }
+ 745               		.loc 1 493 13 is_stmt 1 view .LVU185
+ 493:uplink.c      ****         }
+ 746               		.loc 1 493 27 is_stmt 0 view .LVU186
+ 747 026c 8093 0000 		sts paymentMethod,r24
+ 748 0270 00C0      		rjmp .L22
+ 749               	.LBE41:
+ 750               		.cfi_endproc
+ 751               	.LFE24:
+ 753               	.global	cmd_deny_vend
+ 755               	cmd_deny_vend:
+ 756               	.LVL66:
+ 757               	.LFB30:
+ 583:uplink.c      **** 
+ 584:uplink.c      **** void cmd_start_session(char *arg)
+ 585:uplink.c      **** {
+ 586:uplink.c      ****     if (mdb_state == MDB_ENABLED)
+ 587:uplink.c      ****     {
+ 588:uplink.c      ****         if (session.start.flag == 0)
+ 589:uplink.c      ****         {
+ 590:uplink.c      ****             session.start.flag = 1;
+ 591:uplink.c      ****             //          char abc[40];
+ 592:uplink.c      ****             //            sprintf(abc,"cmd-session-start-000-%c\r\n",arg);
+ 593:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("cmd start session00"));
+ 594:uplink.c      ****             session.start.funds = atoi(arg);
+ 595:uplink.c      ****             mdb_poll_reply = MDB_REPLY_BEGIN_SESSION;
+ 596:uplink.c      ****         }
+ 597:uplink.c      ****         else
+ 598:uplink.c      ****         {
+ 599:uplink.c      ****             send_str_p(UPLINK_USART, PSTR("Error: Session is already running\r\n"));
+ 600:uplink.c      ****         }
+ 601:uplink.c      ****     }
+ 602:uplink.c      ****     else
+ 603:uplink.c      ****     {
+ 604:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("Error: MateDealer not ready for a session\r\n"));
+ 605:uplink.c      ****     }
+ 606:uplink.c      **** }
+ 607:uplink.c      **** 
+ 608:uplink.c      **** void cmd_approve_vend(char *arg)
+ 609:uplink.c      **** {
+ 610:uplink.c      ****     if (mdb_state == MDB_VENDING)
+ 611:uplink.c      ****     {
+ 612:uplink.c      ****         session.result.vend_approved = 1;
+ 613:uplink.c      ****         session.result.vend_amount = atoi(arg);
+ 614:uplink.c      ****         char ac[30];
+ 615:uplink.c      ****         sprintf(ac, "cmd-approved %d", atoi(arg));
+ 616:uplink.c      ****         send_str(UPLINK_USART, ac);
+ 617:uplink.c      ****         mdb_poll_reply = MDB_REPLY_VEND_APPROVED;
+ 618:uplink.c      ****     }
+ 619:uplink.c      ****     else
+ 620:uplink.c      ****     {
+ 621:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("Error: MateDealer is not in a suitable state to approve a ve
+ 622:uplink.c      ****     }
+ 623:uplink.c      **** }
+ 624:uplink.c      **** 
+ 625:uplink.c      **** void cmd_deny_vend(char *arg)
+ 626:uplink.c      **** {
+ 758               		.loc 1 626 1 is_stmt 1 view -0
+ 759               		.cfi_startproc
+ 760               	/* prologue: function */
+ 761               	/* frame size = 0 */
+ 762               	/* stack size = 0 */
+ 763               	.L__stack_usage = 0
+ 627:uplink.c      ****     if (mdb_state == MDB_VENDING)
+ 764               		.loc 1 627 5 view .LVU188
+ 765               		.loc 1 627 8 is_stmt 0 view .LVU189
+ 766 0272 8091 0000 		lds r24,mdb_state
+ 767               	.LVL67:
+ 768               		.loc 1 627 8 view .LVU190
+ 769 0276 8430      		cpi r24,lo8(4)
+ 770 0278 01F4      		brne .L27
+ 628:uplink.c      ****     {
+ 629:uplink.c      ****         session.result.vend_denied = 1;
+ 771               		.loc 1 629 9 is_stmt 1 view .LVU191
+ 772               		.loc 1 629 36 is_stmt 0 view .LVU192
+ 773 027a 81E0      		ldi r24,lo8(1)
+ 774 027c 8093 0000 		sts session+4,r24
+ 630:uplink.c      ****         mdb_poll_reply = MDB_REPLY_VEND_DENIED;
+ 775               		.loc 1 630 9 is_stmt 1 view .LVU193
+ 776               		.loc 1 630 24 is_stmt 0 view .LVU194
+ 777 0280 87E0      		ldi r24,lo8(7)
+ 778 0282 8093 0000 		sts mdb_poll_reply,r24
+ 779               	/* epilogue start */
+ 631:uplink.c      ****     }
+ 632:uplink.c      ****     else
+ 633:uplink.c      ****     {
+ 634:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("Error: MateDealer is not in a suitable state to deny a vend\
+ 635:uplink.c      ****     }
+ 636:uplink.c      **** }
+ 780               		.loc 1 636 1 view .LVU195
+ 781 0286 0895      		ret
+ 782               	.L27:
+ 783               	.LBB45:
+ 784               	.LBI45:
+ 625:uplink.c      **** {
+ 785               		.loc 1 625 6 is_stmt 1 view .LVU196
+ 786               	.LVL68:
+ 787               	.LBB46:
+ 634:uplink.c      ****     }
+ 788               		.loc 1 634 9 view .LVU197
+ 789               	.LBE46:
+ 634:uplink.c      ****     }
+ 790               		.loc 1 634 34 view .LVU198
+ 634:uplink.c      ****     }
+ 791               		.loc 1 634 34 view .LVU199
+ 792               	.LBB47:
+ 634:uplink.c      ****     }
+ 793               		.loc 1 634 9 is_stmt 0 view .LVU200
+ 794 0288 60E0      		ldi r22,lo8(__c.1)
+ 795 028a 70E0      		ldi r23,hi8(__c.1)
+ 796 028c 80E0      		ldi r24,0
+ 797 028e 0C94 0000 		jmp send_str_p
+ 798               	.LVL69:
+ 799               	.LBE47:
+ 800               	.LBE45:
+ 801               		.cfi_endproc
+ 802               	.LFE30:
+ 804               	.global	cmd_cancel_session
+ 806               	cmd_cancel_session:
+ 807               	.LVL70:
+ 808               	.LFB31:
+ 637:uplink.c      **** 
+ 638:uplink.c      **** void cmd_cancel_session(char *arg)
+ 639:uplink.c      **** {
+ 809               		.loc 1 639 1 is_stmt 1 view -0
+ 810               		.cfi_startproc
+ 811               	/* prologue: function */
+ 812               	/* frame size = 0 */
+ 813               	/* stack size = 0 */
+ 814               	.L__stack_usage = 0
+ 640:uplink.c      ****     if (mdb_state == MDB_SESSION_IDLE)
+ 815               		.loc 1 640 5 view .LVU202
+ 816               		.loc 1 640 8 is_stmt 0 view .LVU203
+ 817 0292 8091 0000 		lds r24,mdb_state
+ 818               	.LVL71:
+ 819               		.loc 1 640 8 view .LVU204
+ 820 0296 8330      		cpi r24,lo8(3)
+ 821 0298 01F4      		brne .L31
+ 641:uplink.c      ****     {
+ 642:uplink.c      ****         mdb_poll_reply = MDB_REPLY_SESSION_CANCEL_REQ;
+ 822               		.loc 1 642 9 is_stmt 1 view .LVU205
+ 823               		.loc 1 642 24 is_stmt 0 view .LVU206
+ 824 029a 85E0      		ldi r24,lo8(5)
+ 825 029c 8093 0000 		sts mdb_poll_reply,r24
+ 826               	/* epilogue start */
+ 643:uplink.c      ****     }
+ 644:uplink.c      ****     else
+ 645:uplink.c      ****     {
+ 646:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("Error: MateDealer is not in a suitable state to cancel a ses
+ 647:uplink.c      ****     }
+ 648:uplink.c      **** }
+ 827               		.loc 1 648 1 view .LVU207
+ 828 02a0 0895      		ret
+ 829               	.L31:
+ 830               	.LBB51:
+ 831               	.LBI51:
+ 638:uplink.c      **** {
+ 832               		.loc 1 638 6 is_stmt 1 view .LVU208
+ 833               	.LVL72:
+ 834               	.LBB52:
+ 646:uplink.c      ****     }
+ 835               		.loc 1 646 9 view .LVU209
+ 836               	.LBE52:
+ 646:uplink.c      ****     }
+ 837               		.loc 1 646 34 view .LVU210
+ 646:uplink.c      ****     }
+ 838               		.loc 1 646 34 view .LVU211
+ 839               	.LBB53:
+ 646:uplink.c      ****     }
+ 840               		.loc 1 646 9 is_stmt 0 view .LVU212
+ 841 02a2 60E0      		ldi r22,lo8(__c.0)
+ 842 02a4 70E0      		ldi r23,hi8(__c.0)
+ 843 02a6 80E0      		ldi r24,0
+ 844 02a8 0C94 0000 		jmp send_str_p
+ 845               	.LVL73:
+ 846               	.LBE53:
+ 847               	.LBE51:
+ 848               		.cfi_endproc
+ 849               	.LFE31:
+ 851               	.global	cmd_start_session
+ 853               	cmd_start_session:
+ 854               	.LVL74:
+ 855               	.LFB28:
+ 585:uplink.c      ****     if (mdb_state == MDB_ENABLED)
+ 856               		.loc 1 585 1 is_stmt 1 view -0
+ 857               		.cfi_startproc
+ 585:uplink.c      ****     if (mdb_state == MDB_ENABLED)
+ 858               		.loc 1 585 1 is_stmt 0 view .LVU214
+ 859 02ac CF93      		push r28
+ 860               	.LCFI18:
+ 861               		.cfi_def_cfa_offset 4
+ 862               		.cfi_offset 28, -3
+ 863 02ae DF93      		push r29
+ 864               	.LCFI19:
+ 865               		.cfi_def_cfa_offset 5
+ 866               		.cfi_offset 29, -4
+ 867               	/* prologue: function */
+ 868               	/* frame size = 0 */
+ 869               	/* stack size = 2 */
+ 870               	.L__stack_usage = 2
+ 871 02b0 D82F      		mov r29,r24
+ 872 02b2 C92F      		mov r28,r25
+ 586:uplink.c      ****     {
+ 873               		.loc 1 586 5 is_stmt 1 view .LVU215
+ 586:uplink.c      ****     {
+ 874               		.loc 1 586 8 is_stmt 0 view .LVU216
+ 875 02b4 8091 0000 		lds r24,mdb_state
+ 876               	.LVL75:
+ 586:uplink.c      ****     {
+ 877               		.loc 1 586 8 view .LVU217
+ 878 02b8 8230      		cpi r24,lo8(2)
+ 879 02ba 01F4      		brne .L35
+ 588:uplink.c      ****         {
+ 880               		.loc 1 588 9 is_stmt 1 view .LVU218
+ 588:uplink.c      ****         {
+ 881               		.loc 1 588 12 is_stmt 0 view .LVU219
+ 882 02bc 8091 0000 		lds r24,session
+ 883 02c0 8111      		cpse r24,__zero_reg__
+ 884 02c2 00C0      		rjmp .L36
+ 885               	.LVL76:
+ 886               	.LBB61:
+ 887               	.LBI61:
+ 584:uplink.c      **** {
+ 888               		.loc 1 584 6 is_stmt 1 view .LVU220
+ 889               	.LBB62:
+ 590:uplink.c      ****             //          char abc[40];
+ 890               		.loc 1 590 13 view .LVU221
+ 590:uplink.c      ****             //          char abc[40];
+ 891               		.loc 1 590 32 is_stmt 0 view .LVU222
+ 892 02c4 81E0      		ldi r24,lo8(1)
+ 893 02c6 8093 0000 		sts session,r24
+ 593:uplink.c      ****             session.start.funds = atoi(arg);
+ 894               		.loc 1 593 13 is_stmt 1 view .LVU223
+ 895               	.LBE62:
+ 593:uplink.c      ****             session.start.funds = atoi(arg);
+ 896               		.loc 1 593 38 view .LVU224
+ 593:uplink.c      ****             session.start.funds = atoi(arg);
+ 897               		.loc 1 593 38 view .LVU225
+ 898               	.LBB63:
+ 593:uplink.c      ****             session.start.funds = atoi(arg);
+ 899               		.loc 1 593 13 is_stmt 0 view .LVU226
+ 900 02ca 60E0      		ldi r22,lo8(__c.5)
+ 901 02cc 70E0      		ldi r23,hi8(__c.5)
+ 902 02ce 80E0      		ldi r24,0
+ 903 02d0 0E94 0000 		call send_str_p
+ 904               	.LVL77:
+ 594:uplink.c      ****             mdb_poll_reply = MDB_REPLY_BEGIN_SESSION;
+ 905               		.loc 1 594 13 is_stmt 1 view .LVU227
+ 594:uplink.c      ****             mdb_poll_reply = MDB_REPLY_BEGIN_SESSION;
+ 906               		.loc 1 594 35 is_stmt 0 view .LVU228
+ 907 02d4 8D2F      		mov r24,r29
+ 908 02d6 9C2F      		mov r25,r28
+ 909 02d8 0E94 0000 		call atoi
+ 910               	.LVL78:
+ 594:uplink.c      ****             mdb_poll_reply = MDB_REPLY_BEGIN_SESSION;
+ 911               		.loc 1 594 33 view .LVU229
+ 912 02dc 9093 0000 		sts session+1+1,r25
+ 913 02e0 8093 0000 		sts session+1,r24
+ 595:uplink.c      ****         }
+ 914               		.loc 1 595 13 is_stmt 1 view .LVU230
+ 595:uplink.c      ****         }
+ 915               		.loc 1 595 28 is_stmt 0 view .LVU231
+ 916 02e4 84E0      		ldi r24,lo8(4)
+ 917 02e6 8093 0000 		sts mdb_poll_reply,r24
+ 918               	/* epilogue start */
+ 919               	.LBE63:
+ 920               	.LBE61:
+ 606:uplink.c      **** 
+ 921               		.loc 1 606 1 view .LVU232
+ 922 02ea DF91      		pop r29
+ 923               	.LVL79:
+ 606:uplink.c      **** 
+ 924               		.loc 1 606 1 view .LVU233
+ 925 02ec CF91      		pop r28
+ 926 02ee 0895      		ret
+ 927               	.L36:
+ 599:uplink.c      ****         }
+ 928               		.loc 1 599 13 is_stmt 1 view .LVU234
+ 929               	.LBB64:
+ 599:uplink.c      ****         }
+ 930               		.loc 1 599 38 view .LVU235
+ 599:uplink.c      ****         }
+ 931               		.loc 1 599 38 view .LVU236
+ 932               	.LBE64:
+ 599:uplink.c      ****         }
+ 933               		.loc 1 599 13 is_stmt 0 view .LVU237
+ 934 02f0 60E0      		ldi r22,lo8(__c.4)
+ 935 02f2 70E0      		ldi r23,hi8(__c.4)
+ 936               	.L39:
+ 604:uplink.c      ****     }
+ 937               		.loc 1 604 9 view .LVU238
+ 938 02f4 80E0      		ldi r24,0
+ 939               	/* epilogue start */
+ 606:uplink.c      **** 
+ 940               		.loc 1 606 1 view .LVU239
+ 941 02f6 DF91      		pop r29
+ 942 02f8 CF91      		pop r28
+ 604:uplink.c      ****     }
+ 943               		.loc 1 604 9 view .LVU240
+ 944 02fa 0C94 0000 		jmp send_str_p
+ 945               	.LVL80:
+ 946               	.L35:
+ 604:uplink.c      ****     }
+ 947               		.loc 1 604 9 is_stmt 1 view .LVU241
+ 948               	.LBB65:
+ 604:uplink.c      ****     }
+ 949               		.loc 1 604 34 view .LVU242
+ 604:uplink.c      ****     }
+ 950               		.loc 1 604 34 view .LVU243
+ 951               	.LBE65:
+ 604:uplink.c      ****     }
+ 952               		.loc 1 604 9 is_stmt 0 view .LVU244
+ 953 02fe 60E0      		ldi r22,lo8(__c.3)
+ 954 0300 70E0      		ldi r23,hi8(__c.3)
+ 955 0302 00C0      		rjmp .L39
+ 956               		.cfi_endproc
+ 957               	.LFE28:
+ 959               		.section	.rodata.str1.1
+ 960               	.LC3:
+ 961 0045 564D 4320 		.string	"VMC feature level:       %d\r\n"
+ 961      6665 6174 
+ 961      7572 6520 
+ 961      6C65 7665 
+ 961      6C3A 2020 
+ 962               	.LC4:
+ 963 0063 564D 4320 		.string	"VMC display columns:     %d\r\n"
+ 963      6469 7370 
+ 963      6C61 7920 
+ 963      636F 6C75 
+ 963      6D6E 733A 
+ 964               	.LC5:
+ 965 0081 564D 4320 		.string	"VMC display rows:        %d\r\n"
+ 965      6469 7370 
+ 965      6C61 7920 
+ 965      726F 7773 
+ 965      3A20 2020 
+ 966               	.LC6:
+ 967 009f 564D 4320 		.string	"VMC display info:        %d\r\n"
+ 967      6469 7370 
+ 967      6C61 7920 
+ 967      696E 666F 
+ 967      3A20 2020 
+ 968               	.LC7:
+ 969 00bd 4D61 7869 		.string	"Maximum price:           %d\r\n"
+ 969      6D75 6D20 
+ 969      7072 6963 
+ 969      653A 2020 
+ 969      2020 2020 
+ 970               	.LC8:
+ 971 00db 4D69 6E69 		.string	"Minimum price:           %d\r\n"
+ 971      6D75 6D20 
+ 971      7072 6963 
+ 971      653A 2020 
+ 971      2020 2020 
+ 972               		.text
+ 973               	.global	cmd_info
+ 975               	cmd_info:
+ 976               	.LVL81:
+ 977               	.LFB26:
+ 525:uplink.c      ****     if (mdb_state >= MDB_ENABLED)
+ 978               		.loc 1 525 1 is_stmt 1 view -0
+ 979               		.cfi_startproc
+ 525:uplink.c      ****     if (mdb_state >= MDB_ENABLED)
+ 980               		.loc 1 525 1 is_stmt 0 view .LVU246
+ 981 0304 0F93      		push r16
+ 982               	.LCFI20:
+ 983               		.cfi_def_cfa_offset 4
+ 984               		.cfi_offset 16, -3
+ 985 0306 1F93      		push r17
+ 986               	.LCFI21:
+ 987               		.cfi_def_cfa_offset 5
+ 988               		.cfi_offset 17, -4
+ 989 0308 CF93      		push r28
+ 990               	.LCFI22:
+ 991               		.cfi_def_cfa_offset 6
+ 992               		.cfi_offset 28, -5
+ 993 030a DF93      		push r29
+ 994               	.LCFI23:
+ 995               		.cfi_def_cfa_offset 7
+ 996               		.cfi_offset 29, -6
+ 997 030c CDB7      		in r28,__SP_L__
+ 998 030e DEB7      		in r29,__SP_H__
+ 999               	.LCFI24:
+ 1000               		.cfi_def_cfa_register 28
+ 1001 0310 A897      		sbiw r28,40
+ 1002               	.LCFI25:
+ 1003               		.cfi_def_cfa_offset 47
+ 1004 0312 0FB6      		in __tmp_reg__,__SREG__
+ 1005 0314 F894      		cli
+ 1006 0316 DEBF      		out __SP_H__,r29
+ 1007 0318 0FBE      		out __SREG__,__tmp_reg__
+ 1008 031a CDBF      		out __SP_L__,r28
+ 1009               	/* prologue: function */
+ 1010               	/* frame size = 40 */
+ 1011               	/* stack size = 44 */
+ 1012               	.L__stack_usage = 44
+ 526:uplink.c      ****     {
+ 1013               		.loc 1 526 5 is_stmt 1 view .LVU247
+ 526:uplink.c      ****     {
+ 1014               		.loc 1 526 8 is_stmt 0 view .LVU248
+ 1015 031c 8091 0000 		lds r24,mdb_state
+ 1016               	.LVL82:
+ 526:uplink.c      ****     {
+ 1017               		.loc 1 526 8 view .LVU249
+ 1018 0320 8230      		cpi r24,lo8(2)
+ 1019 0322 00F4      		brsh .+2
+ 1020 0324 00C0      		rjmp .L41
+ 1021               	.LBB75:
+ 1022               	.LBI75:
+ 524:uplink.c      **** {
+ 1023               		.loc 1 524 6 is_stmt 1 view .LVU250
+ 1024               	.LVL83:
+ 1025               	.LBB76:
+ 1026               	.LBB77:
+ 528:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("@-----------------------------------------------\r\n"));
+ 1027               		.loc 1 528 9 view .LVU251
+ 529:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("## VMC configuration data ##\r\n"));
+ 1028               		.loc 1 529 9 view .LVU252
+ 1029               	.LBE77:
+ 1030               	.LBE76:
+ 529:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("## VMC configuration data ##\r\n"));
+ 1031               		.loc 1 529 34 view .LVU253
+ 529:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("## VMC configuration data ##\r\n"));
+ 1032               		.loc 1 529 34 view .LVU254
+ 1033               	.LBB82:
+ 1034               	.LBB78:
+ 529:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("## VMC configuration data ##\r\n"));
+ 1035               		.loc 1 529 9 is_stmt 0 view .LVU255
+ 1036 0326 60E0      		ldi r22,lo8(__c.17)
+ 1037 0328 70E0      		ldi r23,hi8(__c.17)
+ 1038 032a 80E0      		ldi r24,0
+ 1039 032c 0E94 0000 		call send_str_p
+ 1040               	.LVL84:
+ 530:uplink.c      ****         sprintf(buffer, "VMC feature level:       %d\r\n", vmc.feature_level);
+ 1041               		.loc 1 530 9 is_stmt 1 view .LVU256
+ 1042               	.LBE78:
+ 1043               	.LBE82:
+ 530:uplink.c      ****         sprintf(buffer, "VMC feature level:       %d\r\n", vmc.feature_level);
+ 1044               		.loc 1 530 34 view .LVU257
+ 530:uplink.c      ****         sprintf(buffer, "VMC feature level:       %d\r\n", vmc.feature_level);
+ 1045               		.loc 1 530 34 view .LVU258
+ 1046               	.LBB83:
+ 1047               	.LBB79:
+ 530:uplink.c      ****         sprintf(buffer, "VMC feature level:       %d\r\n", vmc.feature_level);
+ 1048               		.loc 1 530 9 is_stmt 0 view .LVU259
+ 1049 0330 60E0      		ldi r22,lo8(__c.16)
+ 1050 0332 70E0      		ldi r23,hi8(__c.16)
+ 1051 0334 80E0      		ldi r24,0
+ 1052 0336 0E94 0000 		call send_str_p
+ 1053               	.LVL85:
+ 531:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1054               		.loc 1 531 9 is_stmt 1 view .LVU260
+ 1055 033a 8091 0000 		lds r24,vmc
+ 1056 033e 1F92      		push __zero_reg__
+ 1057 0340 8F93      		push r24
+ 1058 0342 80E0      		ldi r24,lo8(.LC3)
+ 1059 0344 90E0      		ldi r25,hi8(.LC3)
+ 1060 0346 9F93      		push r25
+ 1061 0348 8F93      		push r24
+ 1062 034a 8E01      		movw r16,r28
+ 1063 034c 0F5F      		subi r16,-1
+ 1064 034e 1F4F      		sbci r17,-1
+ 1065 0350 1F93      		push r17
+ 1066 0352 0F93      		push r16
+ 1067 0354 0E94 0000 		call sprintf
+ 1068               	.LVL86:
+ 532:uplink.c      ****         sprintf(buffer, "VMC display columns:     %d\r\n", vmc.dispaly_cols);
+ 1069               		.loc 1 532 9 view .LVU261
+ 1070 0358 B801      		movw r22,r16
+ 1071 035a 80E0      		ldi r24,0
+ 1072 035c 0E94 0000 		call send_str
+ 1073               	.LVL87:
+ 533:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1074               		.loc 1 533 9 view .LVU262
+ 1075 0360 8091 0000 		lds r24,vmc+1
+ 1076 0364 1F92      		push __zero_reg__
+ 1077 0366 8F93      		push r24
+ 1078 0368 80E0      		ldi r24,lo8(.LC4)
+ 1079 036a 90E0      		ldi r25,hi8(.LC4)
+ 1080 036c 9F93      		push r25
+ 1081 036e 8F93      		push r24
+ 1082 0370 1F93      		push r17
+ 1083 0372 0F93      		push r16
+ 1084 0374 0E94 0000 		call sprintf
+ 1085               	.LVL88:
+ 534:uplink.c      ****         sprintf(buffer, "VMC display rows:        %d\r\n", vmc.dispaly_rows);
+ 1086               		.loc 1 534 9 view .LVU263
+ 1087 0378 B801      		movw r22,r16
+ 1088 037a 80E0      		ldi r24,0
+ 1089 037c 0E94 0000 		call send_str
+ 1090               	.LVL89:
+ 535:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1091               		.loc 1 535 9 view .LVU264
+ 1092 0380 8091 0000 		lds r24,vmc+2
+ 1093 0384 1F92      		push __zero_reg__
+ 1094 0386 8F93      		push r24
+ 1095 0388 80E0      		ldi r24,lo8(.LC5)
+ 1096 038a 90E0      		ldi r25,hi8(.LC5)
+ 1097 038c 9F93      		push r25
+ 1098 038e 8F93      		push r24
+ 1099 0390 1F93      		push r17
+ 1100 0392 0F93      		push r16
+ 1101 0394 0E94 0000 		call sprintf
+ 1102               	.LVL90:
+ 536:uplink.c      ****         sprintf(buffer, "VMC display info:        %d\r\n", vmc.dispaly_info);
+ 1103               		.loc 1 536 9 view .LVU265
+ 1104 0398 B801      		movw r22,r16
+ 1105 039a 80E0      		ldi r24,0
+ 1106 039c 0E94 0000 		call send_str
+ 1107               	.LVL91:
+ 537:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1108               		.loc 1 537 9 view .LVU266
+ 1109 03a0 8091 0000 		lds r24,vmc+3
+ 1110 03a4 1F92      		push __zero_reg__
+ 1111 03a6 8F93      		push r24
+ 1112 03a8 80E0      		ldi r24,lo8(.LC6)
+ 1113 03aa 90E0      		ldi r25,hi8(.LC6)
+ 1114 03ac 9F93      		push r25
+ 1115 03ae 8F93      		push r24
+ 1116 03b0 1F93      		push r17
+ 1117 03b2 0F93      		push r16
+ 1118 03b4 0E94 0000 		call sprintf
+ 1119               	.LVL92:
+ 538:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("##    VMC price range     ##\r\n"));
+ 1120               		.loc 1 538 9 view .LVU267
+ 1121 03b8 B801      		movw r22,r16
+ 1122 03ba 80E0      		ldi r24,0
+ 1123 03bc 0E94 0000 		call send_str
+ 1124               	.LVL93:
+ 539:uplink.c      ****         sprintf(buffer, "Maximum price:           %d\r\n", price.max);
+ 1125               		.loc 1 539 9 view .LVU268
+ 1126               	.LBE79:
+ 1127               	.LBE83:
+ 539:uplink.c      ****         sprintf(buffer, "Maximum price:           %d\r\n", price.max);
+ 1128               		.loc 1 539 34 view .LVU269
+ 539:uplink.c      ****         sprintf(buffer, "Maximum price:           %d\r\n", price.max);
+ 1129               		.loc 1 539 34 view .LVU270
+ 1130               	.LBB84:
+ 1131               	.LBB80:
+ 539:uplink.c      ****         sprintf(buffer, "Maximum price:           %d\r\n", price.max);
+ 1132               		.loc 1 539 9 is_stmt 0 view .LVU271
+ 1133 03c0 60E0      		ldi r22,lo8(__c.15)
+ 1134 03c2 70E0      		ldi r23,hi8(__c.15)
+ 1135 03c4 80E0      		ldi r24,0
+ 1136 03c6 0E94 0000 		call send_str_p
+ 1137               	.LVL94:
+ 540:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1138               		.loc 1 540 9 is_stmt 1 view .LVU272
+ 1139 03ca 8091 0000 		lds r24,price+1
+ 1140 03ce 8F93      		push r24
+ 1141 03d0 8091 0000 		lds r24,price
+ 1142 03d4 8F93      		push r24
+ 1143 03d6 80E0      		ldi r24,lo8(.LC7)
+ 1144 03d8 90E0      		ldi r25,hi8(.LC7)
+ 1145 03da 9F93      		push r25
+ 1146 03dc 8F93      		push r24
+ 1147 03de 1F93      		push r17
+ 1148 03e0 0F93      		push r16
+ 1149 03e2 0E94 0000 		call sprintf
+ 1150               	.LVL95:
+ 541:uplink.c      ****         sprintf(buffer, "Minimum price:           %d\r\n", price.min);
+ 1151               		.loc 1 541 9 view .LVU273
+ 1152 03e6 B801      		movw r22,r16
+ 1153 03e8 80E0      		ldi r24,0
+ 1154 03ea 0E94 0000 		call send_str
+ 1155               	.LVL96:
+ 542:uplink.c      ****         send_str(UPLINK_USART, buffer);
+ 1156               		.loc 1 542 9 view .LVU274
+ 1157 03ee 8091 0000 		lds r24,price+3
+ 1158 03f2 8F93      		push r24
+ 1159 03f4 8091 0000 		lds r24,price+2
+ 1160 03f8 8F93      		push r24
+ 1161 03fa 80E0      		ldi r24,lo8(.LC8)
+ 1162 03fc 90E0      		ldi r25,hi8(.LC8)
+ 1163 03fe 9F93      		push r25
+ 1164 0400 8F93      		push r24
+ 1165 0402 1F93      		push r17
+ 1166 0404 0F93      		push r16
+ 1167 0406 0E94 0000 		call sprintf
+ 1168               	.LVL97:
+ 543:uplink.c      ****         send_str_p(UPLINK_USART, PSTR("-----------------------------------------------*\r\n"));
+ 1169               		.loc 1 543 9 view .LVU275
+ 1170 040a 0FB6      		in __tmp_reg__,__SREG__
+ 1171 040c F894      		cli
+ 1172 040e DEBF      		out __SP_H__,r29
+ 1173 0410 0FBE      		out __SREG__,__tmp_reg__
+ 1174 0412 CDBF      		out __SP_L__,r28
+ 1175 0414 B801      		movw r22,r16
+ 1176 0416 80E0      		ldi r24,0
+ 1177 0418 0E94 0000 		call send_str
+ 1178               	.LVL98:
+ 544:uplink.c      ****     }
+ 1179               		.loc 1 544 9 view .LVU276
+ 1180               	.LBE80:
+ 1181               	.LBE84:
+ 544:uplink.c      ****     }
+ 1182               		.loc 1 544 34 view .LVU277
+ 544:uplink.c      ****     }
+ 1183               		.loc 1 544 34 view .LVU278
+ 1184               	.LBB85:
+ 1185               	.LBB81:
+ 544:uplink.c      ****     }
+ 1186               		.loc 1 544 9 is_stmt 0 view .LVU279
+ 1187 041c 60E0      		ldi r22,lo8(__c.14)
+ 1188 041e 70E0      		ldi r23,hi8(__c.14)
+ 1189 0420 80E0      		ldi r24,0
+ 1190 0422 0E94 0000 		call send_str_p
+ 1191               	.LVL99:
+ 1192               	/* epilogue start */
+ 1193               	.LBE81:
+ 1194               	.LBE85:
+ 1195               	.LBE75:
+ 550:uplink.c      **** 
+ 1196               		.loc 1 550 1 view .LVU280
+ 1197 0426 A896      		adiw r28,40
+ 1198 0428 0FB6      		in __tmp_reg__,__SREG__
+ 1199 042a F894      		cli
+ 1200 042c DEBF      		out __SP_H__,r29
+ 1201 042e 0FBE      		out __SREG__,__tmp_reg__
+ 1202 0430 CDBF      		out __SP_L__,r28
+ 1203 0432 DF91      		pop r29
+ 1204 0434 CF91      		pop r28
+ 1205 0436 1F91      		pop r17
+ 1206 0438 0F91      		pop r16
+ 1207 043a 0895      		ret
+ 1208               	.LVL100:
+ 1209               	.L41:
+ 548:uplink.c      ****     }
+ 1210               		.loc 1 548 9 is_stmt 1 view .LVU281
+ 1211               	.LBB86:
+ 548:uplink.c      ****     }
+ 1212               		.loc 1 548 34 view .LVU282
+ 548:uplink.c      ****     }
+ 1213               		.loc 1 548 34 view .LVU283
+ 1214               	.LBE86:
+ 548:uplink.c      ****     }
+ 1215               		.loc 1 548 9 is_stmt 0 view .LVU284
+ 1216 043c 60E0      		ldi r22,lo8(__c.13)
+ 1217 043e 70E0      		ldi r23,hi8(__c.13)
+ 1218 0440 80E0      		ldi r24,0
+ 1219               	/* epilogue start */
+ 550:uplink.c      **** 
+ 1220               		.loc 1 550 1 view .LVU285
+ 1221 0442 A896      		adiw r28,40
+ 1222 0444 0FB6      		in __tmp_reg__,__SREG__
+ 1223 0446 F894      		cli
+ 1224 0448 DEBF      		out __SP_H__,r29
+ 1225 044a 0FBE      		out __SREG__,__tmp_reg__
+ 1226 044c CDBF      		out __SP_L__,r28
+ 1227 044e DF91      		pop r29
+ 1228 0450 CF91      		pop r28
+ 1229 0452 1F91      		pop r17
+ 1230 0454 0F91      		pop r16
+ 548:uplink.c      ****     }
+ 1231               		.loc 1 548 9 view .LVU286
+ 1232 0456 0C94 0000 		jmp send_str_p
+ 1233               	.LVL101:
+ 1234               		.cfi_endproc
+ 1235               	.LFE26:
+ 1237               		.section	.rodata.str1.1
+ 1238               	.LC9:
+ 1239 00f9 636D 642D 		.string	"cmd-approved %d"
+ 1239      6170 7072 
+ 1239      6F76 6564 
+ 1239      2025 6400 
+ 1240               		.text
+ 1241               	.global	cmd_approve_vend
+ 1243               	cmd_approve_vend:
+ 1244               	.LVL102:
+ 1245               	.LFB29:
+ 609:uplink.c      ****     if (mdb_state == MDB_VENDING)
+ 1246               		.loc 1 609 1 is_stmt 1 view -0
+ 1247               		.cfi_startproc
+ 609:uplink.c      ****     if (mdb_state == MDB_VENDING)
+ 1248               		.loc 1 609 1 is_stmt 0 view .LVU288
+ 1249 045a 0F93      		push r16
+ 1250               	.LCFI26:
+ 1251               		.cfi_def_cfa_offset 4
+ 1252               		.cfi_offset 16, -3
+ 1253 045c 1F93      		push r17
+ 1254               	.LCFI27:
+ 1255               		.cfi_def_cfa_offset 5
+ 1256               		.cfi_offset 17, -4
+ 1257 045e CF93      		push r28
+ 1258               	.LCFI28:
+ 1259               		.cfi_def_cfa_offset 6
+ 1260               		.cfi_offset 28, -5
+ 1261 0460 DF93      		push r29
+ 1262               	.LCFI29:
+ 1263               		.cfi_def_cfa_offset 7
+ 1264               		.cfi_offset 29, -6
+ 1265 0462 CDB7      		in r28,__SP_L__
+ 1266 0464 DEB7      		in r29,__SP_H__
+ 1267               	.LCFI30:
+ 1268               		.cfi_def_cfa_register 28
+ 1269 0466 6E97      		sbiw r28,30
+ 1270               	.LCFI31:
+ 1271               		.cfi_def_cfa_offset 37
+ 1272 0468 0FB6      		in __tmp_reg__,__SREG__
+ 1273 046a F894      		cli
+ 1274 046c DEBF      		out __SP_H__,r29
+ 1275 046e 0FBE      		out __SREG__,__tmp_reg__
+ 1276 0470 CDBF      		out __SP_L__,r28
+ 1277               	/* prologue: function */
+ 1278               	/* frame size = 30 */
+ 1279               	/* stack size = 34 */
+ 1280               	.L__stack_usage = 34
+ 1281 0472 8C01      		movw r16,r24
+ 610:uplink.c      ****     {
+ 1282               		.loc 1 610 5 is_stmt 1 view .LVU289
+ 610:uplink.c      ****     {
+ 1283               		.loc 1 610 8 is_stmt 0 view .LVU290
+ 1284 0474 8091 0000 		lds r24,mdb_state
+ 1285               	.LVL103:
+ 610:uplink.c      ****     {
+ 1286               		.loc 1 610 8 view .LVU291
+ 1287 0478 8430      		cpi r24,lo8(4)
+ 1288 047a 01F4      		brne .L45
+ 1289               	.LVL104:
+ 1290               	.LBB92:
+ 1291               	.LBI92:
+ 608:uplink.c      **** {
+ 1292               		.loc 1 608 6 is_stmt 1 view .LVU292
+ 1293               	.LBB93:
+ 1294               	.LBB94:
+ 612:uplink.c      ****         session.result.vend_amount = atoi(arg);
+ 1295               		.loc 1 612 9 view .LVU293
+ 612:uplink.c      ****         session.result.vend_amount = atoi(arg);
+ 1296               		.loc 1 612 38 is_stmt 0 view .LVU294
+ 1297 047c 81E0      		ldi r24,lo8(1)
+ 1298 047e 8093 0000 		sts session+3,r24
+ 613:uplink.c      ****         char ac[30];
+ 1299               		.loc 1 613 9 is_stmt 1 view .LVU295
+ 613:uplink.c      ****         char ac[30];
+ 1300               		.loc 1 613 38 is_stmt 0 view .LVU296
+ 1301 0482 C801      		movw r24,r16
+ 1302 0484 0E94 0000 		call atoi
+ 1303               	.LVL105:
+ 613:uplink.c      ****         char ac[30];
+ 1304               		.loc 1 613 36 view .LVU297
+ 1305 0488 9093 0000 		sts session+5+1,r25
+ 1306 048c 8093 0000 		sts session+5,r24
+ 614:uplink.c      ****         sprintf(ac, "cmd-approved %d", atoi(arg));
+ 1307               		.loc 1 614 9 is_stmt 1 view .LVU298
+ 615:uplink.c      ****         send_str(UPLINK_USART, ac);
+ 1308               		.loc 1 615 9 view .LVU299
+ 1309 0490 C801      		movw r24,r16
+ 1310 0492 0E94 0000 		call atoi
+ 1311               	.LVL106:
+ 1312 0496 9F93      		push r25
+ 1313 0498 8F93      		push r24
+ 1314 049a 80E0      		ldi r24,lo8(.LC9)
+ 1315 049c 90E0      		ldi r25,hi8(.LC9)
+ 1316 049e 9F93      		push r25
+ 1317 04a0 8F93      		push r24
+ 1318 04a2 8E01      		movw r16,r28
+ 1319               	.LVL107:
+ 615:uplink.c      ****         send_str(UPLINK_USART, ac);
+ 1320               		.loc 1 615 9 is_stmt 0 view .LVU300
+ 1321 04a4 0F5F      		subi r16,-1
+ 1322 04a6 1F4F      		sbci r17,-1
+ 1323 04a8 1F93      		push r17
+ 1324 04aa 0F93      		push r16
+ 1325 04ac 0E94 0000 		call sprintf
+ 1326               	.LVL108:
+ 616:uplink.c      ****         mdb_poll_reply = MDB_REPLY_VEND_APPROVED;
+ 1327               		.loc 1 616 9 is_stmt 1 view .LVU301
+ 1328 04b0 B801      		movw r22,r16
+ 1329 04b2 80E0      		ldi r24,0
+ 1330 04b4 0E94 0000 		call send_str
+ 1331               	.LVL109:
+ 617:uplink.c      ****     }
+ 1332               		.loc 1 617 9 view .LVU302
+ 617:uplink.c      ****     }
+ 1333               		.loc 1 617 24 is_stmt 0 view .LVU303
+ 1334 04b8 86E0      		ldi r24,lo8(6)
+ 1335 04ba 8093 0000 		sts mdb_poll_reply,r24
+ 1336               	.LBE94:
+ 623:uplink.c      **** 
+ 1337               		.loc 1 623 1 view .LVU304
+ 1338 04be 0F90      		pop __tmp_reg__
+ 1339 04c0 0F90      		pop __tmp_reg__
+ 1340 04c2 0F90      		pop __tmp_reg__
+ 1341 04c4 0F90      		pop __tmp_reg__
+ 1342 04c6 0F90      		pop __tmp_reg__
+ 1343 04c8 0F90      		pop __tmp_reg__
+ 1344               	/* epilogue start */
+ 1345               	.LBE93:
+ 1346               	.LBE92:
+ 1347 04ca 6E96      		adiw r28,30
+ 1348 04cc 0FB6      		in __tmp_reg__,__SREG__
+ 1349 04ce F894      		cli
+ 1350 04d0 DEBF      		out __SP_H__,r29
+ 1351 04d2 0FBE      		out __SREG__,__tmp_reg__
+ 1352 04d4 CDBF      		out __SP_L__,r28
+ 1353 04d6 DF91      		pop r29
+ 1354 04d8 CF91      		pop r28
+ 1355 04da 1F91      		pop r17
+ 1356 04dc 0F91      		pop r16
+ 1357 04de 0895      		ret
+ 1358               	.LVL110:
+ 1359               	.L45:
+ 621:uplink.c      ****     }
+ 1360               		.loc 1 621 9 is_stmt 1 view .LVU305
+ 1361               	.LBB95:
+ 621:uplink.c      ****     }
+ 1362               		.loc 1 621 34 view .LVU306
+ 621:uplink.c      ****     }
+ 1363               		.loc 1 621 34 view .LVU307
+ 1364               	.LBE95:
+ 621:uplink.c      ****     }
+ 1365               		.loc 1 621 9 is_stmt 0 view .LVU308
+ 1366 04e0 60E0      		ldi r22,lo8(__c.2)
+ 1367 04e2 70E0      		ldi r23,hi8(__c.2)
+ 1368 04e4 80E0      		ldi r24,0
+ 1369               	/* epilogue start */
+ 623:uplink.c      **** 
+ 1370               		.loc 1 623 1 view .LVU309
+ 1371 04e6 6E96      		adiw r28,30
+ 1372 04e8 0FB6      		in __tmp_reg__,__SREG__
+ 1373 04ea F894      		cli
+ 1374 04ec DEBF      		out __SP_H__,r29
+ 1375 04ee 0FBE      		out __SREG__,__tmp_reg__
+ 1376 04f0 CDBF      		out __SP_L__,r28
+ 1377 04f2 DF91      		pop r29
+ 1378 04f4 CF91      		pop r28
+ 1379 04f6 1F91      		pop r17
+ 1380 04f8 0F91      		pop r16
+ 1381               	.LVL111:
+ 621:uplink.c      ****     }
+ 1382               		.loc 1 621 9 view .LVU310
+ 1383 04fa 0C94 0000 		jmp send_str_p
+ 1384               	.LVL112:
+ 1385               		.cfi_endproc
+ 1386               	.LFE29:
+ 1388               		.section	.rodata.str1.1
+ 1389               	.LC10:
+ 1390 0109 2000      		.string	" "
+ 1391               		.text
+ 1392               	.global	parse_cmd
+ 1394               	parse_cmd:
+ 1395               	.LVL113:
+ 1396               	.LFB13:
+ 110:uplink.c      **** 
+ 1397               		.loc 1 110 1 is_stmt 1 view -0
+ 1398               		.cfi_startproc
+ 110:uplink.c      **** 
+ 1399               		.loc 1 110 1 is_stmt 0 view .LVU312
+ 1400 04fe BF92      		push r11
+ 1401               	.LCFI32:
+ 1402               		.cfi_def_cfa_offset 4
+ 1403               		.cfi_offset 11, -3
+ 1404 0500 CF92      		push r12
+ 1405               	.LCFI33:
+ 1406               		.cfi_def_cfa_offset 5
+ 1407               		.cfi_offset 12, -4
+ 1408 0502 DF92      		push r13
+ 1409               	.LCFI34:
+ 1410               		.cfi_def_cfa_offset 6
+ 1411               		.cfi_offset 13, -5
+ 1412 0504 EF92      		push r14
+ 1413               	.LCFI35:
+ 1414               		.cfi_def_cfa_offset 7
+ 1415               		.cfi_offset 14, -6
+ 1416 0506 FF92      		push r15
+ 1417               	.LCFI36:
+ 1418               		.cfi_def_cfa_offset 8
+ 1419               		.cfi_offset 15, -7
+ 1420 0508 0F93      		push r16
+ 1421               	.LCFI37:
+ 1422               		.cfi_def_cfa_offset 9
+ 1423               		.cfi_offset 16, -8
+ 1424 050a 1F93      		push r17
+ 1425               	.LCFI38:
+ 1426               		.cfi_def_cfa_offset 10
+ 1427               		.cfi_offset 17, -9
+ 1428 050c CF93      		push r28
+ 1429               	.LCFI39:
+ 1430               		.cfi_def_cfa_offset 11
+ 1431               		.cfi_offset 28, -10
+ 1432 050e DF93      		push r29
+ 1433               	.LCFI40:
+ 1434               		.cfi_def_cfa_offset 12
+ 1435               		.cfi_offset 29, -11
+ 1436 0510 0F92      		push __tmp_reg__
+ 1437 0512 0F92      		push __tmp_reg__
+ 1438               	.LCFI41:
+ 1439               		.cfi_def_cfa_offset 14
+ 1440 0514 CDB7      		in r28,__SP_L__
+ 1441 0516 DEB7      		in r29,__SP_H__
+ 1442               	.LCFI42:
+ 1443               		.cfi_def_cfa_register 28
+ 1444               	/* prologue: function */
+ 1445               	/* frame size = 2 */
+ 1446               	/* stack size = 11 */
+ 1447               	.L__stack_usage = 11
+ 1448 0518 9A83      		std Y+2,r25
+ 1449 051a 8983      		std Y+1,r24
+ 112:uplink.c      ****     uint8_t index = 0;
+ 1450               		.loc 1 112 5 is_stmt 1 view .LVU313
+ 113:uplink.c      **** 
+ 1451               		.loc 1 113 5 view .LVU314
+ 1452               	.LVL114:
+ 116:uplink.c      ****     //send_str_p(UPLINK_USART,PSTR("PARSE_CMD00\r\n"));
+ 1453               		.loc 1 116 5 view .LVU315
+ 116:uplink.c      ****     //send_str_p(UPLINK_USART,PSTR("PARSE_CMD00\r\n"));
+ 1454               		.loc 1 116 11 is_stmt 0 view .LVU316
+ 1455 051c 60E0      		ldi r22,lo8(.LC10)
+ 1456 051e 70E0      		ldi r23,hi8(.LC10)
+ 1457 0520 CE01      		movw r24,r28
+ 1458               	.LVL115:
+ 116:uplink.c      ****     //send_str_p(UPLINK_USART,PSTR("PARSE_CMD00\r\n"));
+ 1459               		.loc 1 116 11 view .LVU317
+ 1460 0522 0196      		adiw r24,1
+ 1461 0524 0E94 0000 		call strsep
+ 1462               	.LVL116:
+ 116:uplink.c      ****     //send_str_p(UPLINK_USART,PSTR("PARSE_CMD00\r\n"));
+ 1463               		.loc 1 116 11 view .LVU318
+ 1464 0528 B82E      		mov r11,r24
+ 1465 052a C92E      		mov r12,r25
+ 1466               	.LVL117:
+ 119:uplink.c      ****     {
+ 1467               		.loc 1 119 5 is_stmt 1 view .LVU319
+ 113:uplink.c      **** 
+ 1468               		.loc 1 113 13 is_stmt 0 view .LVU320
+ 1469 052c D12C      		mov r13,__zero_reg__
+ 1470               	.LVL118:
+ 1471               	.L49:
+ 119:uplink.c      ****     {
+ 1472               		.loc 1 119 12 is_stmt 1 view .LVU321
+ 1473 052e 0D2D      		mov r16,r13
+ 1474 0530 10E0      		ldi r17,0
+ 119:uplink.c      ****     {
+ 1475               		.loc 1 119 38 is_stmt 0 view .LVU322
+ 1476 0532 84E0      		ldi r24,lo8(4)
+ 1477 0534 D89E      		mul r13,r24
+ 1478 0536 9001      		movw r18,r0
+ 1479 0538 1124      		clr __zero_reg__
+ 1480 053a D901      		movw r26,r18
+ 1481 053c A050      		subi r26,lo8(-(CMD_LIST))
+ 1482 053e B040      		sbci r27,hi8(-(CMD_LIST))
+ 1483 0540 7D01      		movw r14,r26
+ 119:uplink.c      ****     {
+ 1484               		.loc 1 119 12 view .LVU323
+ 1485 0542 6B2D      		mov r22,r11
+ 1486 0544 7C2D      		mov r23,r12
+ 1487 0546 8D91      		ld r24,X+
+ 1488 0548 9C91      		ld r25,X
+ 1489 054a 0E94 0000 		call strcasecmp
+ 1490               	.LVL119:
+ 1491 054e 892B      		or r24,r25
+ 1492 0550 01F4      		brne .L52
+ 130:uplink.c      ****     return;
+ 1493               		.loc 1 130 5 is_stmt 1 view .LVU324
+ 1494 0552 D701      		movw r26,r14
+ 1495 0554 1296      		adiw r26,2
+ 1496 0556 ED91      		ld r30,X+
+ 1497 0558 FC91      		ld r31,X
+ 1498 055a 8981      		ldd r24,Y+1
+ 1499 055c 9A81      		ldd r25,Y+2
+ 1500 055e 1995      		eicall
+ 1501               	.LVL120:
+ 131:uplink.c      **** }
+ 1502               		.loc 1 131 5 view .LVU325
+ 1503 0560 00C0      		rjmp .L48
+ 1504               	.L52:
+ 121:uplink.c      ****         {
+ 1505               		.loc 1 121 9 view .LVU326
+ 121:uplink.c      ****         {
+ 1506               		.loc 1 121 32 is_stmt 0 view .LVU327
+ 1507 0562 000F      		lsl r16
+ 1508 0564 111F      		rol r17
+ 1509 0566 000F      		lsl r16
+ 1510 0568 111F      		rol r17
+ 1511 056a F801      		movw r30,r16
+ 1512 056c E050      		subi r30,lo8(-(CMD_LIST+4))
+ 1513 056e F040      		sbci r31,hi8(-(CMD_LIST+4))
+ 121:uplink.c      ****         {
+ 1514               		.loc 1 121 12 view .LVU328
+ 1515 0570 8081      		ld r24,Z
+ 1516 0572 9181      		ldd r25,Z+1
+ 1517 0574 892B      		or r24,r25
+ 1518 0576 01F4      		brne .L50
+ 123:uplink.c      ****             return;
+ 1519               		.loc 1 123 13 is_stmt 1 view .LVU329
+ 1520               	.LBB96:
+ 123:uplink.c      ****             return;
+ 1521               		.loc 1 123 38 view .LVU330
+ 123:uplink.c      ****             return;
+ 1522               		.loc 1 123 38 view .LVU331
+ 1523               	.LBE96:
+ 123:uplink.c      ****             return;
+ 1524               		.loc 1 123 13 is_stmt 0 view .LVU332
+ 1525 0578 60E0      		ldi r22,lo8(__c.34)
+ 1526 057a 70E0      		ldi r23,hi8(__c.34)
+ 1527 057c 80E0      		ldi r24,0
+ 1528 057e 0E94 0000 		call send_str_p
+ 1529               	.LVL121:
+ 124:uplink.c      ****         }
+ 1530               		.loc 1 124 13 is_stmt 1 view .LVU333
+ 1531               	.L48:
+ 1532               	/* epilogue start */
+ 132:uplink.c      **** 
+ 1533               		.loc 1 132 1 is_stmt 0 view .LVU334
+ 1534 0582 0F90      		pop __tmp_reg__
+ 1535 0584 0F90      		pop __tmp_reg__
+ 1536 0586 DF91      		pop r29
+ 1537 0588 CF91      		pop r28
+ 1538 058a 1F91      		pop r17
+ 1539 058c 0F91      		pop r16
+ 1540 058e FF90      		pop r15
+ 1541 0590 EF90      		pop r14
+ 1542 0592 DF90      		pop r13
+ 1543               	.LVL122:
+ 132:uplink.c      **** 
+ 1544               		.loc 1 132 1 view .LVU335
+ 1545 0594 CF90      		pop r12
+ 1546               	.LVL123:
+ 132:uplink.c      **** 
+ 1547               		.loc 1 132 1 view .LVU336
+ 1548 0596 BF90      		pop r11
+ 132:uplink.c      **** 
+ 1549               		.loc 1 132 1 view .LVU337
+ 1550 0598 0895      		ret
+ 1551               	.LVL124:
+ 1552               	.L50:
+ 126:uplink.c      ****     }
+ 1553               		.loc 1 126 9 is_stmt 1 view .LVU338
+ 126:uplink.c      ****     }
+ 1554               		.loc 1 126 14 is_stmt 0 view .LVU339
+ 1555 059a D394      		inc r13
+ 1556               	.LVL125:
+ 126:uplink.c      ****     }
+ 1557               		.loc 1 126 14 view .LVU340
+ 1558 059c 00C0      		rjmp .L49
+ 1559               		.cfi_endproc
+ 1560               	.LFE13:
+ 1562               		.section	.rodata.str1.1
+ 1563               	.LC11:
+ 1564 010b 0D0A 00   		.string	"\r\n"
+ 1565               		.text
+ 1566               	.global	uplink_cmd_handler
+ 1568               	uplink_cmd_handler:
+ 1569               	.LFB12:
+  55:uplink.c      **** 
+ 1570               		.loc 1 55 1 is_stmt 1 view -0
+ 1571               		.cfi_startproc
+ 1572               	/* prologue: function */
+ 1573               	/* frame size = 0 */
+ 1574               	/* stack size = 0 */
+ 1575               	.L__stack_usage = 0
+  57:uplink.c      ****     static uint8_t index = 0;
+ 1576               		.loc 1 57 5 view .LVU342
+  58:uplink.c      **** 
+ 1577               		.loc 1 58 5 view .LVU343
+  61:uplink.c      ****         return;
+ 1578               		.loc 1 61 5 view .LVU344
+  61:uplink.c      ****         return;
+ 1579               		.loc 1 61 9 is_stmt 0 view .LVU345
+ 1580 059e 60E0      		ldi r22,0
+ 1581 05a0 80E0      		ldi r24,0
+ 1582 05a2 0E94 0000 		call buffer_level
+ 1583               	.LVL126:
+  61:uplink.c      ****         return;
+ 1584               		.loc 1 61 8 view .LVU346
+ 1585 05a6 8823      		tst r24
+ 1586 05a8 01F0      		breq .L53
+  65:uplink.c      ****     {
+ 1587               		.loc 1 65 5 is_stmt 1 view .LVU347
+  65:uplink.c      ****     {
+ 1588               		.loc 1 65 8 is_stmt 0 view .LVU348
+ 1589 05aa 8091 0000 		lds r24,index.36
+ 1590 05ae 8431      		cpi r24,lo8(20)
+ 1591 05b0 01F4      		brne .L55
+  67:uplink.c      ****     }
+ 1592               		.loc 1 67 9 is_stmt 1 view .LVU349
+  67:uplink.c      ****     }
+ 1593               		.loc 1 67 15 is_stmt 0 view .LVU350
+ 1594 05b2 1092 0000 		sts index.36,__zero_reg__
+ 1595               	.L55:
+  71:uplink.c      **** 
+ 1596               		.loc 1 71 5 is_stmt 1 view .LVU351
+ 1597 05b6 6091 0000 		lds r22,index.36
+ 1598 05ba 70E0      		ldi r23,0
+ 1599 05bc 6050      		subi r22,lo8(-(cmd.35))
+ 1600 05be 7040      		sbci r23,hi8(-(cmd.35))
+ 1601 05c0 80E0      		ldi r24,0
+ 1602 05c2 0E94 0000 		call recv_char
+ 1603               	.LVL127:
+  73:uplink.c      ****     {
+ 1604               		.loc 1 73 5 view .LVU352
+  73:uplink.c      ****     {
+ 1605               		.loc 1 73 16 is_stmt 0 view .LVU353
+ 1606 05c6 8091 0000 		lds r24,index.36
+ 1607 05ca E82F      		mov r30,r24
+ 1608 05cc F0E0      		ldi r31,0
+ 1609 05ce E050      		subi r30,lo8(-(cmd.35))
+ 1610 05d0 F040      		sbci r31,hi8(-(cmd.35))
+ 1611 05d2 6081      		ld r22,Z
+  73:uplink.c      ****     {
+ 1612               		.loc 1 73 5 view .LVU354
+ 1613 05d4 6D30      		cpi r22,lo8(13)
+ 1614 05d6 01F0      		breq .L56
+ 1615 05d8 00F4      		brsh .L57
+ 1616 05da 6830      		cpi r22,lo8(8)
+ 1617 05dc 01F0      		breq .L58
+ 1618 05de 6A30      		cpi r22,lo8(10)
+ 1619 05e0 01F0      		breq .L53
+ 1620               	.L59:
+  97:uplink.c      ****         {
+ 1621               		.loc 1 97 9 is_stmt 1 view .LVU355
+  97:uplink.c      ****         {
+ 1622               		.loc 1 97 16 is_stmt 0 view .LVU356
+ 1623 05e2 DF01      		movw r26,r30
+ 1624 05e4 1197      		sbiw r26,1
+  97:uplink.c      ****         {
+ 1625               		.loc 1 97 12 view .LVU357
+ 1626 05e6 9C91      		ld r25,X
+ 1627 05e8 9B35      		cpi r25,lo8(91)
+ 1628 05ea 01F4      		brne .L61
+  97:uplink.c      ****         {
+ 1629               		.loc 1 97 42 discriminator 1 view .LVU358
+ 1630 05ec 3297      		sbiw r30,2
+  97:uplink.c      ****         {
+ 1631               		.loc 1 97 36 discriminator 1 view .LVU359
+ 1632 05ee 9081      		ld r25,Z
+  99:uplink.c      ****         }
+ 1633               		.loc 1 99 27 discriminator 1 view .LVU360
+ 1634 05f0 8250      		subi r24,lo8(-(-2))
+  97:uplink.c      ****         {
+ 1635               		.loc 1 97 36 discriminator 1 view .LVU361
+ 1636 05f2 9B31      		cpi r25,lo8(27)
+ 1637 05f4 01F0      		breq .L69
+ 1638               	.L61:
+ 103:uplink.c      ****             index++;
+ 1639               		.loc 1 103 13 is_stmt 1 view .LVU362
+ 1640 05f6 80E0      		ldi r24,0
+ 1641 05f8 0E94 0000 		call send_char
+ 1642               	.LVL128:
+ 104:uplink.c      ****         }
+ 1643               		.loc 1 104 13 view .LVU363
+ 104:uplink.c      ****         }
+ 1644               		.loc 1 104 18 is_stmt 0 view .LVU364
+ 1645 05fc 8091 0000 		lds r24,index.36
+ 1646 0600 00C0      		rjmp .L68
+ 1647               	.L57:
+  73:uplink.c      ****     {
+ 1648               		.loc 1 73 5 view .LVU365
+ 1649 0602 962F      		mov r25,r22
+ 1650 0604 9F7B      		andi r25,lo8(-65)
+ 1651 0606 9B31      		cpi r25,lo8(27)
+ 1652 0608 01F4      		brne .L59
+ 1653               	.L68:
+ 104:uplink.c      ****         }
+ 1654               		.loc 1 104 18 view .LVU366
+ 1655 060a 8F5F      		subi r24,lo8(-(1))
+ 1656               	.L69:
+ 1657 060c 8093 0000 		sts index.36,r24
+ 1658               	.L53:
+ 1659               	/* epilogue start */
+ 107:uplink.c      **** 
+ 1660               		.loc 1 107 1 view .LVU367
+ 1661 0610 0895      		ret
+ 1662               	.L56:
+  77:uplink.c      ****         cmd[index] = '\0';
+ 1663               		.loc 1 77 9 is_stmt 1 view .LVU368
+ 1664 0612 60E0      		ldi r22,lo8(.LC11)
+ 1665 0614 70E0      		ldi r23,hi8(.LC11)
+ 1666 0616 80E0      		ldi r24,0
+ 1667 0618 0E94 0000 		call send_str
+ 1668               	.LVL129:
+  78:uplink.c      ****         parse_cmd(cmd);
+ 1669               		.loc 1 78 9 view .LVU369
+  78:uplink.c      ****         parse_cmd(cmd);
+ 1670               		.loc 1 78 12 is_stmt 0 view .LVU370
+ 1671 061c E091 0000 		lds r30,index.36
+ 1672 0620 F0E0      		ldi r31,0
+  78:uplink.c      ****         parse_cmd(cmd);
+ 1673               		.loc 1 78 20 view .LVU371
+ 1674 0622 E050      		subi r30,lo8(-(cmd.35))
+ 1675 0624 F040      		sbci r31,hi8(-(cmd.35))
+ 1676 0626 1082      		st Z,__zero_reg__
+  79:uplink.c      ****         index = 0;
+ 1677               		.loc 1 79 9 is_stmt 1 view .LVU372
+ 1678 0628 80E0      		ldi r24,lo8(cmd.35)
+ 1679 062a 90E0      		ldi r25,hi8(cmd.35)
+ 1680 062c 0E94 0000 		call parse_cmd
+ 1681               	.LVL130:
+  80:uplink.c      ****         break;
+ 1682               		.loc 1 80 9 view .LVU373
+  80:uplink.c      ****         break;
+ 1683               		.loc 1 80 15 is_stmt 0 view .LVU374
+ 1684 0630 1092 0000 		sts index.36,__zero_reg__
+  81:uplink.c      ****     case '\n':
+ 1685               		.loc 1 81 9 is_stmt 1 view .LVU375
+ 1686 0634 0895      		ret
+ 1687               	.L58:
+  87:uplink.c      ****         send_char(UPLINK_USART, '\b');
+ 1688               		.loc 1 87 9 view .LVU376
+  87:uplink.c      ****         send_char(UPLINK_USART, '\b');
+ 1689               		.loc 1 87 14 is_stmt 0 view .LVU377
+ 1690 0636 8150      		subi r24,lo8(-(-1))
+ 1691 0638 8093 0000 		sts index.36,r24
+  88:uplink.c      ****         break;
+ 1692               		.loc 1 88 9 is_stmt 1 view .LVU378
+ 1693 063c 68E0      		ldi r22,lo8(8)
+ 1694 063e 80E0      		ldi r24,0
+ 1695 0640 0C94 0000 		jmp send_char
+ 1696               	.LVL131:
+ 1697               		.cfi_endproc
+ 1698               	.LFE12:
+ 1700               	.global	startTimer
+ 1702               	startTimer:
+ 1703               	.LFB16:
+ 193:uplink.c      ****     timerVal = 1;
+ 1704               		.loc 1 193 1 view -0
+ 1705               		.cfi_startproc
+ 1706               	/* prologue: function */
+ 1707               	/* frame size = 0 */
+ 1708               	/* stack size = 0 */
+ 1709               	.L__stack_usage = 0
+ 194:uplink.c      **** }
+ 1710               		.loc 1 194 5 view .LVU380
+ 194:uplink.c      **** }
+ 1711               		.loc 1 194 14 is_stmt 0 view .LVU381
+ 1712 0644 81E0      		ldi r24,lo8(1)
+ 1713 0646 8093 0000 		sts timerVal,r24
+ 1714               	/* epilogue start */
+ 195:uplink.c      **** void stopTimer()
+ 1715               		.loc 1 195 1 view .LVU382
+ 1716 064a 0895      		ret
+ 1717               		.cfi_endproc
+ 1718               	.LFE16:
+ 1720               		.section	.rodata.str1.1
+ 1721               	.LC12:
+ 1722 010e 3000      		.string	"0"
+ 1723               		.text
+ 1724               	.global	stopTimer
+ 1726               	stopTimer:
+ 1727               	.LFB17:
+ 197:uplink.c      ****     timerVal = 0;
+ 1728               		.loc 1 197 1 is_stmt 1 view -0
+ 1729               		.cfi_startproc
+ 1730               	/* prologue: function */
+ 1731               	/* frame size = 0 */
+ 1732               	/* stack size = 0 */
+ 1733               	.L__stack_usage = 0
+ 198:uplink.c      **** 
+ 1734               		.loc 1 198 5 view .LVU384
+ 198:uplink.c      **** 
+ 1735               		.loc 1 198 14 is_stmt 0 view .LVU385
+ 1736 064c 1092 0000 		sts timerVal,__zero_reg__
+ 200:uplink.c      ****     vendValue = "0";
+ 1737               		.loc 1 200 5 is_stmt 1 view .LVU386
+ 200:uplink.c      ****     vendValue = "0";
+ 1738               		.loc 1 200 16 is_stmt 0 view .LVU387
+ 1739 0650 1092 0000 		sts timerPassV,__zero_reg__
+ 201:uplink.c      **** }
+ 1740               		.loc 1 201 5 is_stmt 1 view .LVU388
+ 201:uplink.c      **** }
+ 1741               		.loc 1 201 15 is_stmt 0 view .LVU389
+ 1742 0654 80E0      		ldi r24,lo8(.LC12)
+ 1743 0656 90E0      		ldi r25,hi8(.LC12)
+ 1744 0658 9093 0000 		sts vendValue+1,r25
+ 1745 065c 8093 0000 		sts vendValue,r24
+ 1746               	/* epilogue start */
+ 202:uplink.c      **** uint8_t getTimerState()
+ 1747               		.loc 1 202 1 view .LVU390
+ 1748 0660 0895      		ret
+ 1749               		.cfi_endproc
+ 1750               	.LFE17:
+ 1752               	.global	getTimerState
+ 1754               	getTimerState:
+ 1755               	.LFB18:
+ 204:uplink.c      ****     return timerVal;
+ 1756               		.loc 1 204 1 is_stmt 1 view -0
+ 1757               		.cfi_startproc
+ 1758               	/* prologue: function */
+ 1759               	/* frame size = 0 */
+ 1760               	/* stack size = 0 */
+ 1761               	.L__stack_usage = 0
+ 205:uplink.c      **** }
+ 1762               		.loc 1 205 5 view .LVU392
+ 206:uplink.c      **** void incrementTimerPass()
+ 1763               		.loc 1 206 1 is_stmt 0 view .LVU393
+ 1764 0662 8091 0000 		lds r24,timerVal
+ 1765               	/* epilogue start */
+ 1766 0666 0895      		ret
+ 1767               		.cfi_endproc
+ 1768               	.LFE18:
+ 1770               	.global	incrementTimerPass
+ 1772               	incrementTimerPass:
+ 1773               	.LFB19:
+ 208:uplink.c      **** 
+ 1774               		.loc 1 208 1 is_stmt 1 view -0
+ 1775               		.cfi_startproc
+ 1776               	/* prologue: function */
+ 1777               	/* frame size = 0 */
+ 1778               	/* stack size = 0 */
+ 1779               	.L__stack_usage = 0
+ 210:uplink.c      **** }
+ 1780               		.loc 1 210 5 view .LVU395
+ 210:uplink.c      **** }
+ 1781               		.loc 1 210 29 is_stmt 0 view .LVU396
+ 1782 0668 8091 0000 		lds r24,timerPassV
+ 1783 066c 8F5F      		subi r24,lo8(-(1))
+ 210:uplink.c      **** }
+ 1784               		.loc 1 210 16 view .LVU397
+ 1785 066e 8093 0000 		sts timerPassV,r24
+ 1786               	/* epilogue start */
+ 211:uplink.c      **** uint8_t getTimerPass()
+ 1787               		.loc 1 211 1 view .LVU398
+ 1788 0672 0895      		ret
+ 1789               		.cfi_endproc
+ 1790               	.LFE19:
+ 1792               	.global	getTimerPass
+ 1794               	getTimerPass:
+ 1795               	.LFB20:
+ 213:uplink.c      **** 
+ 1796               		.loc 1 213 1 is_stmt 1 view -0
+ 1797               		.cfi_startproc
+ 1798               	/* prologue: function */
+ 1799               	/* frame size = 0 */
+ 1800               	/* stack size = 0 */
+ 1801               	.L__stack_usage = 0
+ 215:uplink.c      **** }
+ 1802               		.loc 1 215 5 view .LVU400
+ 216:uplink.c      **** void liveVendMonitor()
+ 1803               		.loc 1 216 1 is_stmt 0 view .LVU401
+ 1804 0674 8091 0000 		lds r24,timerPassV
+ 1805               	/* epilogue start */
+ 1806 0678 0895      		ret
+ 1807               		.cfi_endproc
+ 1808               	.LFE20:
+ 1810               	.global	liveVendMonitor
+ 1812               	liveVendMonitor:
+ 1813               	.LFB21:
+ 218:uplink.c      ****     //not needed yet
+ 1814               		.loc 1 218 1 is_stmt 1 view -0
+ 1815               		.cfi_startproc
+ 1816               	/* prologue: function */
+ 1817               	/* frame size = 0 */
+ 1818               	/* stack size = 0 */
+ 1819               	.L__stack_usage = 0
+ 220:uplink.c      **** void resetDevice()
+ 1820               		.loc 1 220 1 view .LVU403
+ 1821               	/* epilogue start */
+ 1822 067a 0895      		ret
+ 1823               		.cfi_endproc
+ 1824               	.LFE21:
+ 1826               	.global	resetDevice
+ 1828               	resetDevice:
+ 1829               	.LFB22:
+ 222:uplink.c      ****     stopTimer();
+ 1830               		.loc 1 222 1 view -0
+ 1831               		.cfi_startproc
+ 1832               	/* prologue: function */
+ 1833               	/* frame size = 0 */
+ 1834               	/* stack size = 0 */
+ 1835               	.L__stack_usage = 0
+ 223:uplink.c      ****     RESET();
+ 1836               		.loc 1 223 5 view .LVU405
+ 1837 067c 0E94 0000 		call stopTimer
+ 1838               	.LVL132:
+ 224:uplink.c      **** }
+ 1839               		.loc 1 224 5 view .LVU406
+ 1840               	/* #APP */
+ 1841               	 ;  224 "uplink.c" 1
+ 1842 0680 E0E0      		ldi r30,0
+ 1843               	 ;  0 "" 2
+ 224:uplink.c      **** }
+ 1844               		.loc 1 224 5 view .LVU407
+ 1845               	 ;  224 "uplink.c" 1
+ 1846 0682 F0E0      		ldi r31,0
+ 1847               	 ;  0 "" 2
+ 224:uplink.c      **** }
+ 1848               		.loc 1 224 5 view .LVU408
+ 1849               	 ;  224 "uplink.c" 1
+ 1850 0684 0994      		ijmp
+ 1851               	 ;  0 "" 2
+ 224:uplink.c      **** }
+ 1852               		.loc 1 224 12 view .LVU409
+ 1853               	/* #NOAPP */
+ 1854               	/* epilogue start */
+ 225:uplink.c      **** 
+ 1855               		.loc 1 225 1 is_stmt 0 view .LVU410
+ 1856 0686 0895      		ret
+ 1857               		.cfi_endproc
+ 1858               	.LFE22:
+ 1860               	.global	timeHandler
+ 1862               	timeHandler:
+ 1863               	.LVL133:
+ 1864               	.LFB23:
+ 228:uplink.c      **** 
+ 1865               		.loc 1 228 1 is_stmt 1 view -0
+ 1866               		.cfi_startproc
+ 1867               	/* prologue: function */
+ 1868               	/* frame size = 0 */
+ 1869               	/* stack size = 0 */
+ 1870               	.L__stack_usage = 0
+ 230:uplink.c      ****     {
+ 1871               		.loc 1 230 5 view .LVU412
+ 230:uplink.c      ****     {
+ 1872               		.loc 1 230 8 is_stmt 0 view .LVU413
+ 1873 0688 8111      		cpse r24,__zero_reg__
+ 1874 068a 00C0      		rjmp .L78
+ 235:uplink.c      ****         {
+ 1875               		.loc 1 235 9 is_stmt 1 view .LVU414
+ 246:uplink.c      ****         cmd_start_session(vendValue);
+ 1876               		.loc 1 246 9 view .LVU415
+ 247:uplink.c      ****     }
+ 1877               		.loc 1 247 9 view .LVU416
+ 1878 068c 8091 0000 		lds r24,vendValue
+ 1879 0690 9091 0000 		lds r25,vendValue+1
+ 1880               	.LVL134:
+ 247:uplink.c      ****     }
+ 1881               		.loc 1 247 9 is_stmt 0 view .LVU417
+ 1882 0694 0E94 0000 		call cmd_start_session
+ 1883               	.LVL135:
+ 250:uplink.c      ****     {
+ 1884               		.loc 1 250 5 is_stmt 1 view .LVU418
+ 257:uplink.c      ****     {
+ 1885               		.loc 1 257 5 view .LVU419
+ 273:uplink.c      ****     }
+ 1886               		.loc 1 273 9 view .LVU420
+ 276:uplink.c      ****     {
+ 1887               		.loc 1 276 5 view .LVU421
+ 286:uplink.c      ****     {
+ 1888               		.loc 1 286 5 view .LVU422
+ 289:uplink.c      **** 
+ 1889               		.loc 1 289 5 view .LVU423
+ 291:uplink.c      ****     {
+ 1890               		.loc 1 291 5 view .LVU424
+ 294:uplink.c      **** 
+ 1891               		.loc 1 294 5 view .LVU425
+ 296:uplink.c      ****     {
+ 1892               		.loc 1 296 5 view .LVU426
+ 299:uplink.c      **** 
+ 1893               		.loc 1 299 5 view .LVU427
+ 301:uplink.c      ****     {
+ 1894               		.loc 1 301 5 view .LVU428
+ 1895               	.L91:
+ 353:uplink.c      **** }
+ 1896               		.loc 1 353 5 view .LVU429
+ 1897 0698 0C94 0000 		jmp incrementTimerPass
+ 1898               	.LVL136:
+ 1899               	.L78:
+ 250:uplink.c      ****     {
+ 1900               		.loc 1 250 5 view .LVU430
+ 250:uplink.c      ****     {
+ 1901               		.loc 1 250 8 is_stmt 0 view .LVU431
+ 1902 069c 8330      		cpi r24,lo8(3)
+ 1903 069e 01F0      		breq .L87
+ 257:uplink.c      ****     {
+ 1904               		.loc 1 257 5 is_stmt 1 view .LVU432
+ 257:uplink.c      ****     {
+ 1905               		.loc 1 257 8 is_stmt 0 view .LVU433
+ 1906 06a0 8930      		cpi r24,lo8(9)
+ 1907 06a2 01F0      		breq .L81
+ 273:uplink.c      ****     }
+ 1908               		.loc 1 273 9 is_stmt 1 view .LVU434
+ 276:uplink.c      ****     {
+ 1909               		.loc 1 276 5 view .LVU435
+ 276:uplink.c      ****     {
+ 1910               		.loc 1 276 8 is_stmt 0 view .LVU436
+ 1911 06a4 8C30      		cpi r24,lo8(12)
+ 1912 06a6 01F0      		breq .L84
+ 286:uplink.c      ****     {
+ 1913               		.loc 1 286 5 is_stmt 1 view .LVU437
+ 289:uplink.c      **** 
+ 1914               		.loc 1 289 5 view .LVU438
+ 291:uplink.c      ****     {
+ 1915               		.loc 1 291 5 view .LVU439
+ 294:uplink.c      **** 
+ 1916               		.loc 1 294 5 view .LVU440
+ 296:uplink.c      ****     {
+ 1917               		.loc 1 296 5 view .LVU441
+ 299:uplink.c      **** 
+ 1918               		.loc 1 299 5 view .LVU442
+ 301:uplink.c      ****     {
+ 1919               		.loc 1 301 5 view .LVU443
+ 301:uplink.c      ****     {
+ 1920               		.loc 1 301 8 is_stmt 0 view .LVU444
+ 1921 06a8 8B31      		cpi r24,lo8(27)
+ 1922 06aa 01F0      		breq .L87
+ 286:uplink.c      ****     {
+ 1923               		.loc 1 286 5 is_stmt 1 view .LVU445
+ 289:uplink.c      **** 
+ 1924               		.loc 1 289 5 view .LVU446
+ 291:uplink.c      ****     {
+ 1925               		.loc 1 291 5 view .LVU447
+ 294:uplink.c      **** 
+ 1926               		.loc 1 294 5 view .LVU448
+ 296:uplink.c      ****     {
+ 1927               		.loc 1 296 5 view .LVU449
+ 299:uplink.c      **** 
+ 1928               		.loc 1 299 5 view .LVU450
+ 301:uplink.c      ****     {
+ 1929               		.loc 1 301 5 view .LVU451
+ 311:uplink.c      ****     {
+ 1930               		.loc 1 311 5 view .LVU452
+ 314:uplink.c      **** 
+ 1931               		.loc 1 314 5 view .LVU453
+ 316:uplink.c      ****     {
+ 1932               		.loc 1 316 5 view .LVU454
+ 316:uplink.c      ****     {
+ 1933               		.loc 1 316 8 is_stmt 0 view .LVU455
+ 1934 06ac 8132      		cpi r24,lo8(33)
+ 1935 06ae 01F0      		breq .L94
+ 311:uplink.c      ****     {
+ 1936               		.loc 1 311 5 is_stmt 1 view .LVU456
+ 314:uplink.c      **** 
+ 1937               		.loc 1 314 5 view .LVU457
+ 316:uplink.c      ****     {
+ 1938               		.loc 1 316 5 view .LVU458
+ 343:uplink.c      ****     {
+ 1939               		.loc 1 343 5 view .LVU459
+ 343:uplink.c      ****     {
+ 1940               		.loc 1 343 8 is_stmt 0 view .LVU460
+ 1941 06b0 8632      		cpi r24,lo8(38)
+ 1942 06b2 01F0      		breq .L92
+ 348:uplink.c      ****     {
+ 1943               		.loc 1 348 5 is_stmt 1 view .LVU461
+ 348:uplink.c      ****     {
+ 1944               		.loc 1 348 8 is_stmt 0 view .LVU462
+ 1945 06b4 8A32      		cpi r24,lo8(42)
+ 1946 06b6 01F0      		breq .L92
+ 1947 06b8 00C0      		rjmp .L91
+ 1948               	.L81:
+ 261:uplink.c      ****         {
+ 1949               		.loc 1 261 9 is_stmt 1 view .LVU463
+ 261:uplink.c      ****         {
+ 1950               		.loc 1 261 24 is_stmt 0 view .LVU464
+ 1951 06ba 8091 0000 		lds r24,vendStateT
+ 1952               	.LVL137:
+ 266:uplink.c      ****         }
+ 1953               		.loc 1 266 13 view .LVU465
+ 1954 06be 60E0      		ldi r22,lo8(__c.28)
+ 1955 06c0 70E0      		ldi r23,hi8(__c.28)
+ 261:uplink.c      ****         {
+ 1956               		.loc 1 261 12 view .LVU466
+ 1957 06c2 8130      		cpi r24,lo8(1)
+ 1958 06c4 01F4      		brne .L91
+ 1959               	.L104:
+ 337:uplink.c      ****             //_delay_ms(3000);
+ 1960               		.loc 1 337 13 view .LVU467
+ 1961 06c6 80E0      		ldi r24,0
+ 1962 06c8 0E94 0000 		call send_str_p
+ 1963               	.LVL138:
+ 1964 06cc 00C0      		rjmp .L91
+ 1965               	.LVL139:
+ 1966               	.L84:
+ 278:uplink.c      ****         {
+ 1967               		.loc 1 278 9 is_stmt 1 view .LVU468
+ 278:uplink.c      ****         {
+ 1968               		.loc 1 278 24 is_stmt 0 view .LVU469
+ 1969 06ce 8091 0000 		lds r24,vendStateT
+ 1970               	.LVL140:
+ 278:uplink.c      ****         {
+ 1971               		.loc 1 278 12 view .LVU470
+ 1972 06d2 8130      		cpi r24,lo8(1)
+ 1973 06d4 01F4      		brne .L91
+ 1974               	.L92:
+ 345:uplink.c      ****     }
+ 1975               		.loc 1 345 9 is_stmt 1 view .LVU471
+ 1976 06d6 0E94 0000 		call resetDevice
+ 1977               	.LVL141:
+ 348:uplink.c      ****     {
+ 1978               		.loc 1 348 5 view .LVU472
+ 1979 06da 00C0      		rjmp .L91
+ 1980               	.LVL142:
+ 1981               	.L87:
+ 308:uplink.c      ****     }
+ 1982               		.loc 1 308 9 view .LVU473
+ 1983 06dc 8091 0000 		lds r24,vendValue
+ 1984 06e0 9091 0000 		lds r25,vendValue+1
+ 1985               	.LVL143:
+ 308:uplink.c      ****     }
+ 1986               		.loc 1 308 9 is_stmt 0 view .LVU474
+ 1987 06e4 0E94 0000 		call cmd_approve_vend
+ 1988               	.LVL144:
+ 311:uplink.c      ****     {
+ 1989               		.loc 1 311 5 is_stmt 1 view .LVU475
+ 314:uplink.c      **** 
+ 1990               		.loc 1 314 5 view .LVU476
+ 316:uplink.c      ****     {
+ 1991               		.loc 1 316 5 view .LVU477
+ 343:uplink.c      ****     {
+ 1992               		.loc 1 343 5 view .LVU478
+ 348:uplink.c      ****     {
+ 1993               		.loc 1 348 5 view .LVU479
+ 1994 06e8 00C0      		rjmp .L91
+ 1995               	.LVL145:
+ 1996               	.L94:
+ 321:uplink.c      ****         {
+ 1997               		.loc 1 321 9 view .LVU480
+ 321:uplink.c      ****         {
+ 1998               		.loc 1 321 24 is_stmt 0 view .LVU481
+ 1999 06ea 8091 0000 		lds r24,vendStateT
+ 2000               	.LVL146:
+ 327:uplink.c      ****             //_delay_ms(3000);
+ 2001               		.loc 1 327 13 view .LVU482
+ 2002 06ee 60E0      		ldi r22,lo8(__c.27)
+ 2003 06f0 70E0      		ldi r23,hi8(__c.27)
+ 321:uplink.c      ****         {
+ 2004               		.loc 1 321 12 view .LVU483
+ 2005 06f2 8130      		cpi r24,lo8(1)
+ 2006 06f4 01F0      		breq .L104
+ 337:uplink.c      ****             //_delay_ms(3000);
+ 2007               		.loc 1 337 13 is_stmt 1 view .LVU484
+ 2008               	.LBB97:
+ 337:uplink.c      ****             //_delay_ms(3000);
+ 2009               		.loc 1 337 38 view .LVU485
+ 337:uplink.c      ****             //_delay_ms(3000);
+ 2010               		.loc 1 337 38 view .LVU486
+ 2011               	.LBE97:
+ 337:uplink.c      ****             //_delay_ms(3000);
+ 2012               		.loc 1 337 13 is_stmt 0 view .LVU487
+ 2013 06f6 60E0      		ldi r22,lo8(__c.26)
+ 2014 06f8 70E0      		ldi r23,hi8(__c.26)
+ 2015 06fa 00C0      		rjmp .L104
+ 2016               		.cfi_endproc
+ 2017               	.LFE23:
+ 2019               		.section	.progmem.data,"a",@progbits
+ 2022               	__c.0:
+ 2023 0000 4572 726F 		.string	"Error: MateDealer is not in a suitable state to cancel a session\r\n"
+ 2023      723A 204D 
+ 2023      6174 6544 
+ 2023      6561 6C65 
+ 2023      7220 6973 
+ 2026               	__c.1:
+ 2027 0043 4572 726F 		.string	"Error: MateDealer is not in a suitable state to deny a vend\r\n"
+ 2027      723A 204D 
+ 2027      6174 6544 
+ 2027      6561 6C65 
+ 2027      7220 6973 
+ 2030               	__c.2:
+ 2031 0081 4572 726F 		.string	"Error: MateDealer is not in a suitable state to approve a vend\r\n"
+ 2031      723A 204D 
+ 2031      6174 6544 
+ 2031      6561 6C65 
+ 2031      7220 6973 
+ 2034               	__c.3:
+ 2035 00c2 4572 726F 		.string	"Error: MateDealer not ready for a session\r\n"
+ 2035      723A 204D 
+ 2035      6174 6544 
+ 2035      6561 6C65 
+ 2035      7220 6E6F 
+ 2038               	__c.4:
+ 2039 00ee 4572 726F 		.string	"Error: Session is already running\r\n"
+ 2039      723A 2053 
+ 2039      6573 7369 
+ 2039      6F6E 2069 
+ 2039      7320 616C 
+ 2042               	__c.5:
+ 2043 0112 636D 6420 		.string	"cmd start session00"
+ 2043      7374 6172 
+ 2043      7420 7365 
+ 2043      7373 696F 
+ 2043      6E30 3000 
+ 2046               	__c.6:
+ 2047 0126 4053 7461 		.string	"@State: NEGATIVE VEND*\r\n"
+ 2047      7465 3A20 
+ 2047      4E45 4741 
+ 2047      5449 5645 
+ 2047      2056 454E 
+ 2050               	__c.7:
+ 2051 013f 4053 7461 		.string	"@State: REVALUE*\r\n"
+ 2051      7465 3A20 
+ 2051      5245 5641 
+ 2051      4C55 452A 
+ 2051      0D0A 00
+ 2054               	__c.8:
+ 2055 0152 4053 7461 		.string	"@State: VEND*\r\n"
+ 2055      7465 3A20 
+ 2055      5645 4E44 
+ 2055      2A0D 0A00 
+ 2058               	__c.9:
+ 2059 0162 4053 7461 		.string	"@State: SESSION IDLE*\r\n"
+ 2059      7465 3A20 
+ 2059      5345 5353 
+ 2059      494F 4E20 
+ 2059      4944 4C45 
+ 2062               	__c.10:
+ 2063 017a 4053 7461 		.string	"@State: ENABLED*\r\n"
+ 2063      7465 3A20 
+ 2063      454E 4142 
+ 2063      4C45 442A 
+ 2063      0D0A 00
+ 2066               	__c.11:
+ 2067 018d 4053 7461 		.string	"@State: DISABLED*\r\n"
+ 2067      7465 3A20 
+ 2067      4449 5341 
+ 2067      424C 4544 
+ 2067      2A0D 0A00 
+ 2070               	__c.12:
+ 2071 01a1 4053 7461 		.string	"@State: INACTIVE*\r\n"
+ 2071      7465 3A20 
+ 2071      494E 4143 
+ 2071      5449 5645 
+ 2071      2A0D 0A00 
+ 2074               	__c.13:
+ 2075 01b5 4572 726F 		.string	"Error: Setup not yet completed!\r\n"
+ 2075      723A 2053 
+ 2075      6574 7570 
+ 2075      206E 6F74 
+ 2075      2079 6574 
+ 2078               	__c.14:
+ 2079 01d7 2D2D 2D2D 		.string	"-----------------------------------------------*\r\n"
+ 2079      2D2D 2D2D 
+ 2079      2D2D 2D2D 
+ 2079      2D2D 2D2D 
+ 2079      2D2D 2D2D 
+ 2082               	__c.15:
+ 2083 020a 2323 2020 		.string	"##    VMC price range     ##\r\n"
+ 2083      2020 564D 
+ 2083      4320 7072 
+ 2083      6963 6520 
+ 2083      7261 6E67 
+ 2086               	__c.16:
+ 2087 0229 2323 2056 		.string	"## VMC configuration data ##\r\n"
+ 2087      4D43 2063 
+ 2087      6F6E 6669 
+ 2087      6775 7261 
+ 2087      7469 6F6E 
+ 2090               	__c.17:
+ 2091 0248 402D 2D2D 		.string	"@-----------------------------------------------\r\n"
+ 2091      2D2D 2D2D 
+ 2091      2D2D 2D2D 
+ 2091      2D2D 2D2D 
+ 2091      2D2D 2D2D 
+ 2094               	__c.18:
+ 2095 027b 2D2D 2D2D 		.string	"-----------------------------------------------\r\n"
+ 2095      2D2D 2D2D 
+ 2095      2D2D 2D2D 
+ 2095      2D2D 2D2D 
+ 2095      2D2D 2D2D 
+ 2098               	__c.19:
+ 2099 02ad 6465 6E79 		.string	"deny-vend:\r\n   denies a vend request.\r\n"
+ 2099      2D76 656E 
+ 2099      643A 0D0A 
+ 2099      2020 2064 
+ 2099      656E 6965 
+ 2102               	__c.20:
+ 2103 02d5 6170 7072 		.string	"approve-vend <vend-amount>:\r\n   approves a vend request with <vend-amount> Euro Cents.\
+ 2103      6F76 652D 
+ 2103      7665 6E64 
+ 2103      203C 7665 
+ 2103      6E64 2D61 
+ 2106               	__c.21:
+ 2107 032e 7374 6172 		.string	"start-session <funds>:\r\n   starts a session with <funds> Euro Cents.\r\n"
+ 2107      742D 7365 
+ 2107      7373 696F 
+ 2107      6E20 3C66 
+ 2107      756E 6473 
+ 2110               	__c.22:
+ 2111 0375 6D64 622D 		.string	"mdb-state:\r\n   displays the current MDB state.\r\n"
+ 2111      7374 6174 
+ 2111      653A 0D0A 
+ 2111      2020 2064 
+ 2111      6973 706C 
+ 2114               	__c.23:
+ 2115 03a6 696E 666F 		.string	"info:\r\n   shows the VMC infos transfered during the setup process\r\n"
+ 2115      3A0D 0A20 
+ 2115      2020 7368 
+ 2115      6F77 7320 
+ 2115      7468 6520 
+ 2118               	__c.24:
+ 2119 03ea 7265 7365 		.string	"reset:\r\n   reset the Arduino\r\n"
+ 2119      743A 0D0A 
+ 2119      2020 2072 
+ 2119      6573 6574 
+ 2119      2074 6865 
+ 2122               	__c.25:
+ 2123 0409 2D2D 2D2D 		.string	"-----------------------------------------------\r\n"
+ 2123      2D2D 2D2D 
+ 2123      2D2D 2D2D 
+ 2123      2D2D 2D2D 
+ 2123      2D2D 2D2D 
+ 2126               	__c.26:
+ 2127 043b 4076 656E 		.string	"@vend-failed*\r\n"
+ 2127      642D 6661 
+ 2127      696C 6564 
+ 2127      2A0D 0A00 
+ 2130               	__c.27:
+ 2131 044b 4076 656E 		.string	"@vend-success*\r\n"
+ 2131      642D 7375 
+ 2131      6363 6573 
+ 2131      732A 0D0A 
+ 2131      00
+ 2134               	__c.28:
+ 2135 045c 4076 656E 		.string	"@vend-success*\r\n"
+ 2135      642D 7375 
+ 2135      6363 6573 
+ 2135      732A 0D0A 
+ 2135      00
+ 2138               	__c.29:
+ 2139 046d 4049 4F3A 		.string	"@IO: PLAY4*\r\n"
+ 2139      2050 4C41 
+ 2139      5934 2A0D 
+ 2139      0A00 
+ 2142               	__c.30:
+ 2143 047b 4049 4F3A 		.string	"@IO: PLAY3*\r\n"
+ 2143      2050 4C41 
+ 2143      5933 2A0D 
+ 2143      0A00 
+ 2146               	__c.31:
+ 2147 0489 4050 4F3A 		.string	"@PO: PIN12 ON*\r\n"
+ 2147      2050 494E 
+ 2147      3132 204F 
+ 2147      4E2A 0D0A 
+ 2147      00
+ 2150               	__c.32:
+ 2151 049a 4049 4F3A 		.string	"@IO: PIN12 OFF*\r\n"
+ 2151      2050 494E 
+ 2151      3132 204F 
+ 2151      4646 2A0D 
+ 2151      0A00 
+ 2154               	__c.33:
+ 2155 04ac 4052 4553 		.string	"@RESETTING DEVICE*\r\n"
+ 2155      4554 5449 
+ 2155      4E47 2044 
+ 2155      4556 4943 
+ 2155      452A 0D0A 
+ 2158               	__c.34:
+ 2159 04c1 4572 726F 		.string	"Error: Unknown command\r\n"
+ 2159      723A 2055 
+ 2159      6E6B 6E6F 
+ 2159      776E 2063 
+ 2159      6F6D 6D61 
+ 2160               		.local	cmd.35
+ 2161               		.comm	cmd.35,20,1
+ 2162               		.local	index.36
+ 2163               		.comm	index.36,1,1
+ 2164               	.global	buff
+ 2165               		.section .bss
+ 2168               	buff:
+ 2169 0000 0000 0000 		.zero	20
+ 2169      0000 0000 
+ 2169      0000 0000 
+ 2169      0000 0000 
+ 2169      0000 0000 
+ 2170               	.global	CMD_LIST
+ 2171               		.section	.rodata.str1.1
+ 2172               	.LC13:
+ 2173 0110 7265 7365 		.string	"reset"
+ 2173      7400 
+ 2174               	.LC14:
+ 2175 0116 6865 6C70 		.string	"help"
+ 2175      00
+ 2176               	.LC15:
+ 2177 011b 696E 666F 		.string	"info"
+ 2177      00
+ 2178               	.LC16:
+ 2179 0120 6D64 622D 		.string	"mdb-state"
+ 2179      7374 6174 
+ 2179      6500 
+ 2180               	.LC17:
+ 2181 012a 7374 6172 		.string	"start-session"
+ 2181      742D 7365 
+ 2181      7373 696F 
+ 2181      6E00 
+ 2182               	.LC18:
+ 2183 0138 6170 7072 		.string	"approve-vend"
+ 2183      6F76 652D 
+ 2183      7665 6E64 
+ 2183      00
+ 2184               	.LC19:
+ 2185 0145 6465 6E79 		.string	"deny-vend"
+ 2185      2D76 656E 
+ 2185      6400 
+ 2186               	.LC20:
+ 2187 014f 6361 6E63 		.string	"cancel-session"
+ 2187      656C 2D73 
+ 2187      6573 7369 
+ 2187      6F6E 00
+ 2188               	.LC21:
+ 2189 015e 696F 00   		.string	"io"
+ 2190               	.LC22:
+ 2191 0161 696E 766F 		.string	"invokevend"
+ 2191      6B65 7665 
+ 2191      6E64 00
+ 2192               		.data
+ 2195               	CMD_LIST:
+ 2196 0000 0000      		.word	.LC13
+ 2197 0002 0000      		.word	gs(cmd_reset)
+ 2198 0004 0000      		.word	.LC14
+ 2199 0006 0000      		.word	gs(cmd_help)
+ 2200 0008 0000      		.word	.LC15
+ 2201 000a 0000      		.word	gs(cmd_info)
+ 2202 000c 0000      		.word	.LC16
+ 2203 000e 0000      		.word	gs(cmd_get_mdb_state)
+ 2204 0010 0000      		.word	.LC17
+ 2205 0012 0000      		.word	gs(cmd_start_session)
+ 2206 0014 0000      		.word	.LC18
+ 2207 0016 0000      		.word	gs(cmd_approve_vend)
+ 2208 0018 0000      		.word	.LC19
+ 2209 001a 0000      		.word	gs(cmd_deny_vend)
+ 2210 001c 0000      		.word	.LC20
+ 2211 001e 0000      		.word	gs(cmd_cancel_session)
+ 2212 0020 0000      		.word	.LC21
+ 2213 0022 0000      		.word	gs(cmd_io)
+ 2214 0024 0000      		.word	.LC22
+ 2215 0026 0000      		.word	gs(vendInvoker)
+ 2216 0028 0000      		.word	0
+ 2217 002a 0000      		.word	0
+ 2218               	.global	vendValue
+ 2219               		.section .bss
+ 2222               	vendValue:
+ 2223 0014 0000      		.zero	2
+ 2224               	.global	paymentMethod
+ 2227               	paymentMethod:
+ 2228 0016 00        		.zero	1
+ 2229               	.global	processComplete
+ 2232               	processComplete:
+ 2233 0017 00        		.zero	1
+ 2234               	.global	timerPassV
+ 2237               	timerPassV:
+ 2238 0018 00        		.zero	1
+ 2239               	.global	timerVal
+ 2242               	timerVal:
+ 2243 0019 00        		.zero	1
+ 2244               		.text
+ 2245               	.Letext0:
+ 2246               		.file 2 "/usr/avr/include/stdint.h"
+ 2247               		.file 3 "mdb.h"
+ 2248               		.file 4 "uplink.h"
+ 2249               		.file 5 "vendSessionStates.h"
+ 2250               		.file 6 "/usr/avr/include/stdio.h"
+ 2251               		.file 7 "/usr/avr/include/string.h"
+ 2252               		.file 8 "/usr/avr/include/stdlib.h"
+ 2253               		.file 9 "usart.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 uplink.c
+     /tmp/ccVgXvlC.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccVgXvlC.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccVgXvlC.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccVgXvlC.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccVgXvlC.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccVgXvlC.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccVgXvlC.s:13     .text:0000000000000000 cmd_reset
+     /tmp/ccVgXvlC.s:2154   .progmem.data:00000000000004ac __c.33
+     /tmp/ccVgXvlC.s:59     .text:0000000000000012 cmd_help
+     /tmp/ccVgXvlC.s:2122   .progmem.data:0000000000000409 __c.25
+     /tmp/ccVgXvlC.s:2118   .progmem.data:00000000000003ea __c.24
+     /tmp/ccVgXvlC.s:2114   .progmem.data:00000000000003a6 __c.23
+     /tmp/ccVgXvlC.s:2110   .progmem.data:0000000000000375 __c.22
+     /tmp/ccVgXvlC.s:2106   .progmem.data:000000000000032e __c.21
+     /tmp/ccVgXvlC.s:2102   .progmem.data:00000000000002d5 __c.20
+     /tmp/ccVgXvlC.s:2098   .progmem.data:00000000000002ad __c.19
+     /tmp/ccVgXvlC.s:2094   .progmem.data:000000000000027b __c.18
+     /tmp/ccVgXvlC.s:163    .text:0000000000000062 cmd_get_mdb_state
+     /tmp/ccVgXvlC.s:2070   .progmem.data:00000000000001a1 __c.12
+     /tmp/ccVgXvlC.s:2066   .progmem.data:000000000000018d __c.11
+     /tmp/ccVgXvlC.s:2062   .progmem.data:000000000000017a __c.10
+     /tmp/ccVgXvlC.s:2058   .progmem.data:0000000000000162 __c.9
+     /tmp/ccVgXvlC.s:2054   .progmem.data:0000000000000152 __c.8
+     /tmp/ccVgXvlC.s:2050   .progmem.data:000000000000013f __c.7
+     /tmp/ccVgXvlC.s:2046   .progmem.data:0000000000000126 __c.6
+     /tmp/ccVgXvlC.s:279    .text:00000000000000a8 cmd_io
+     /tmp/ccVgXvlC.s:2150   .progmem.data:000000000000049a __c.32
+     /tmp/ccVgXvlC.s:2146   .progmem.data:0000000000000489 __c.31
+     /tmp/ccVgXvlC.s:2142   .progmem.data:000000000000047b __c.30
+     /tmp/ccVgXvlC.s:2138   .progmem.data:000000000000046d __c.29
+     /tmp/ccVgXvlC.s:403    .text:0000000000000102 vendInvoker
+     /tmp/ccVgXvlC.s:2222   .bss:0000000000000014 vendValue
+     /tmp/ccVgXvlC.s:2242   .bss:0000000000000019 timerVal
+     /tmp/ccVgXvlC.s:2227   .bss:0000000000000016 paymentMethod
+     /tmp/ccVgXvlC.s:755    .text:0000000000000272 cmd_deny_vend
+     /tmp/ccVgXvlC.s:2026   .progmem.data:0000000000000043 __c.1
+     /tmp/ccVgXvlC.s:806    .text:0000000000000292 cmd_cancel_session
+     /tmp/ccVgXvlC.s:2022   .progmem.data:0000000000000000 __c.0
+     /tmp/ccVgXvlC.s:853    .text:00000000000002ac cmd_start_session
+     /tmp/ccVgXvlC.s:2042   .progmem.data:0000000000000112 __c.5
+     /tmp/ccVgXvlC.s:2038   .progmem.data:00000000000000ee __c.4
+     /tmp/ccVgXvlC.s:2034   .progmem.data:00000000000000c2 __c.3
+     /tmp/ccVgXvlC.s:975    .text:0000000000000304 cmd_info
+     /tmp/ccVgXvlC.s:2090   .progmem.data:0000000000000248 __c.17
+     /tmp/ccVgXvlC.s:2086   .progmem.data:0000000000000229 __c.16
+     /tmp/ccVgXvlC.s:2082   .progmem.data:000000000000020a __c.15
+     /tmp/ccVgXvlC.s:2078   .progmem.data:00000000000001d7 __c.14
+     /tmp/ccVgXvlC.s:2074   .progmem.data:00000000000001b5 __c.13
+     /tmp/ccVgXvlC.s:1243   .text:000000000000045a cmd_approve_vend
+     /tmp/ccVgXvlC.s:2030   .progmem.data:0000000000000081 __c.2
+     /tmp/ccVgXvlC.s:1394   .text:00000000000004fe parse_cmd
+     /tmp/ccVgXvlC.s:2195   .data:0000000000000000 CMD_LIST
+     /tmp/ccVgXvlC.s:2158   .progmem.data:00000000000004c1 __c.34
+     /tmp/ccVgXvlC.s:1568   .text:000000000000059e uplink_cmd_handler
+     /tmp/ccVgXvlC.s:2161   .bss:000000000000002e index.36
+                             .bss:000000000000001a cmd.35
+     /tmp/ccVgXvlC.s:1702   .text:0000000000000644 startTimer
+     /tmp/ccVgXvlC.s:1726   .text:000000000000064c stopTimer
+     /tmp/ccVgXvlC.s:2237   .bss:0000000000000018 timerPassV
+     /tmp/ccVgXvlC.s:1754   .text:0000000000000662 getTimerState
+     /tmp/ccVgXvlC.s:1772   .text:0000000000000668 incrementTimerPass
+     /tmp/ccVgXvlC.s:1794   .text:0000000000000674 getTimerPass
+     /tmp/ccVgXvlC.s:1812   .text:000000000000067a liveVendMonitor
+     /tmp/ccVgXvlC.s:1828   .text:000000000000067c resetDevice
+     /tmp/ccVgXvlC.s:1862   .text:0000000000000688 timeHandler
+     /tmp/ccVgXvlC.s:2134   .progmem.data:000000000000045c __c.28
+     /tmp/ccVgXvlC.s:2130   .progmem.data:000000000000044b __c.27
+     /tmp/ccVgXvlC.s:2126   .progmem.data:000000000000043b __c.26
+     /tmp/ccVgXvlC.s:2168   .bss:0000000000000000 buff
+     /tmp/ccVgXvlC.s:2232   .bss:0000000000000017 processComplete
+
+UNDEFINED SYMBOLS
+send_str_p
+mdb_state
+__tablejump2__
+atoi
+__divmodhi4
+strtok
+sprintf
+send_str
+getLastVendState
+session
+mdb_poll_reply
+vmc
+price
+strsep
+strcasecmp
+buffer_level
+recv_char
+send_char
+vendStateT
+__do_copy_data
+__do_clear_bss
